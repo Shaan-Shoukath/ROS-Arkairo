@@ -1,0 +1,69 @@
+# Drone-1 Survey System Configuration
+# This file contains all parameters for the survey drone
+
+# =============================================================================
+# KML Lane Planner
+# =============================================================================
+kml_lane_planner_node:
+  ros__parameters:
+    lane_width: 10.0
+    overlap_percent: 20.0
+    altitude: 30.0
+    kml_directory: "/home/user/kml_missions"
+    home_latitude: 0.0
+    home_longitude: 0.0
+    reject_zero_home: true
+
+# =============================================================================
+# Navigation
+# =============================================================================
+drone1_navigation_node:
+  ros__parameters:
+    waypoint_radius: 2.0
+    cruise_speed: 5.0
+    approach_speed: 2.0
+    altitude_tolerance: 1.0
+    auto_advance: true
+    loop_mission: false
+    waypoint_timeout: 120.0
+    position_update_rate: 10.0
+
+# =============================================================================
+# Image Capture
+# =============================================================================
+image_capture_node:
+  ros__parameters:
+    camera_device: "/dev/video0"
+    use_usb_camera: true
+    image_width: 1920
+    image_height: 1080
+    fps: 30.0
+    frame_id: "camera_optical_frame"
+
+# =============================================================================
+# Detection and Geotag
+# =============================================================================
+detection_and_geotag_node:
+  ros__parameters:
+    model_path: ""
+    confidence_threshold: 0.7
+    nms_threshold: 0.4
+    camera_fov_horizontal: 62.2
+    camera_fov_vertical: 48.8
+    use_height_scaling: true
+    fixed_gsd: 0.01
+    geofence_radius: 1.0
+    publish_debug_image: true
+
+# =============================================================================
+# GCS Uplink
+# =============================================================================
+d1_to_gcs_uplink_node:
+  ros__parameters:
+    max_queue_size: 100
+    max_retries: 3
+    retry_interval_sec: 1.0
+    min_publish_interval_sec: 0.5
+    enable_heartbeat: true
+    heartbeat_interval_sec: 5.0
+    log_all_targets: true

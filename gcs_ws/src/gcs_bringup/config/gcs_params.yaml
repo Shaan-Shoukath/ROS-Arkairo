@@ -1,0 +1,36 @@
+# Ground Control Station Configuration
+
+# =============================================================================
+# Target Receiver
+# =============================================================================
+gcs_target_receiver_node:
+  ros__parameters:
+    duplicate_distance_threshold_m: 3.0
+    duplicate_time_threshold_sec: 60.0
+    min_latitude: -90.0
+    max_latitude: 90.0
+    min_longitude: -180.0
+    max_longitude: 180.0
+    enable_geofence: false
+    geofence_center_lat: 0.0
+    geofence_center_lon: 0.0
+    geofence_radius_m: 10000.0
+    log_all_targets: true
+    save_targets_to_file: false
+    target_log_path: "/tmp/gcs_targets.json"
+
+# =============================================================================
+# Mission Router
+# =============================================================================
+gcs_mission_router_node:
+  ros__parameters:
+    auto_dispatch: true
+    dispatch_delay_sec: 2.0
+    max_pending_targets: 50
+    fifo_priority: true
+    drone2_timeout_sec: 30.0
+    require_idle_status: true
+    default_spray_duration_sec: 5.0
+    default_approach_altitude_m: 10.0
+    max_missions_per_hour: 60
+    mission_cooldown_sec: 10.0

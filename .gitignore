@@ -1,0 +1,76 @@
+# Build artifacts
+build/
+install/
+log/
+*.pyc
+__pycache__/
+*.egg-info/
+
+# ROS2 generated
+*.msg.h
+*.srv.h
+*_msgs/
+!*/src/*_msgs/
+
+# Documentation (generated)
+DRONE1_NODES_REFERENCE.md
+DRONE2_NODES_REFERENCE.md
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+*.py[cod]
+*$py.class
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.env
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Documentation
+docs/_build/
+
+# Logs
+*.log
+logs/
+log/
+
+# ArduPilot SITL logs (very large BIN files)
+*.BIN
+*.bin
+*.tlog
+*.rlog
+
+# KML missions (user data)
+kml_missions/
+
+# Temporary files
+*.tmp
+*.bak
+
+# Core dumps
+core
+
+

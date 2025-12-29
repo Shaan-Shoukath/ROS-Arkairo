@@ -1,0 +1,7 @@
+# Local detection configuration
+/**:
+  ros__parameters:
+    confidence_threshold: 0.6
+    detection_timeout_sec: 30.0
+    max_detection_attempts: 5
+    require_consecutive_detections: 2

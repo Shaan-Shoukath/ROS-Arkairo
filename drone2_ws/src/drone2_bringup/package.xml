@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>drone2_bringup</name>
+  <version>1.0.0</version>
+  <description>Launch files for Drone-2 Sprayer System</description>
+  <maintainer email="maintainer@example.com">Maintainer</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_python</buildtool_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>drone2_msgs</exec_depend>
+  <exec_depend>gcs_to_d2_downlink</exec_depend>
+  <exec_depend>drone2_navigation</exec_depend>
+  <exec_depend>local_detection</exec_depend>
+  <exec_depend>centering_controller</exec_depend>
+  <exec_depend>sprayer_control</exec_depend>
+  <exec_depend>mission_manager</exec_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>

@@ -1,0 +1,15 @@
+# Sprayer control configuration
+/**:
+  ros__parameters:
+    # PWM settings
+    pwm_channel: 9
+    pwm_off: 1000
+    pwm_on: 2000
+
+    # Spray duration
+    spray_duration_sec: 5.0
+
+    # Safety
+    require_armed: true
+    require_guided: true
+    min_altitude_m: 2.0

@@ -1,0 +1,16 @@
+# GCS to D2 Downlink configuration
+/**:
+  ros__parameters:
+    # Confirmation settings
+    require_confirmation: true
+    confirmation_timeout_sec: 5.0
+
+    # Altitude override
+    override_altitude: true
+    target_altitude_m: 10.0
+
+    # Safety
+    validate_coordinates: true
+    max_distance_from_home_m: 10000.0
+    home_latitude: 0.0
+    home_longitude: 0.0

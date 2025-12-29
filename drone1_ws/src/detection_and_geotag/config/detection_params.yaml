@@ -1,0 +1,64 @@
+# Detection and Geotag configuration
+/**:
+  ros__parameters:
+    # ═══════════════════════════════════════════════════════════════════
+    # Camera Intrinsics (calibrate for your camera)
+    # ═══════════════════════════════════════════════════════════════════
+    camera_fx: 430.0 # Focal length X (pixels)
+    camera_fy: 430.0 # Focal length Y (pixels)
+    camera_cx: 640.0 # Principal point X
+    camera_cy: 360.0 # Principal point Y
+    image_width: 1280
+    image_height: 720
+
+    # Camera orientation (pointing down)
+    camera_roll: 0.0
+    camera_pitch: 1.5708 # 90 degrees
+    camera_yaw: 0.0
+
+    # FOV for fallback calculation
+    hfov_deg: 60.0
+    vfov_deg: 45.0
+
+    # ═══════════════════════════════════════════════════════════════════
+    # Yellow Disease Detection HSV Range
+    # Hue: 15-40 (yellow spectrum including pale tans)
+    # Saturation: 80-255 (vivid yellows)
+    # Value: 80-255 (bright areas)
+    # ═══════════════════════════════════════════════════════════════════
+    yellow_h_min: 15
+    yellow_h_max: 40
+    yellow_s_min: 80
+    yellow_s_max: 255
+    yellow_v_min: 80
+    yellow_v_max: 255
+
+    # Green vegetation detection (plant context)
+    green_h_min: 35
+    green_h_max: 85
+    green_s_min: 30
+    green_s_max: 255
+    green_v_min: 30
+    green_v_max: 255
+
+    # Brown/sand exclusion (ground filtering)
+    brown_h_min: 5
+    brown_h_max: 18
+    brown_s_min: 10
+    brown_s_max: 100
+    brown_v_min: 40
+    brown_v_max: 180
+
+    # ═══════════════════════════════════════════════════════════════════
+    # Detection Thresholds
+    # ═══════════════════════════════════════════════════════════════════
+    min_detection_area: 250 # Minimum pixels for valid detection
+    min_green_nearby: 150 # Green pixels required near detection
+    gps_dedup_distance_m: 3.0 # Don't log duplicates within this radius
+
+    # ═══════════════════════════════════════════════════════════════════
+    # Output
+    # ═══════════════════════════════════════════════════════════════════
+    publish_debug: true
+    log_to_csv: true
+    csv_log_path: "/tmp/disease_detections.csv"

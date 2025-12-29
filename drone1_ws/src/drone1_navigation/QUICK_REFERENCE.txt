@@ -1,0 +1,192 @@
+┌─────────────────────────────────────────────────────────────────────────┐
+│                  DRONE-1 NAVIGATION NODE - QUICK REFERENCE              │
+│                     Cube Orange+ / ArduPilot / ROS 2 Jazzy              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                            STATE MACHINE                                  ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+    INIT
+      ↓
+    WAIT_FOR_FCU  ←──── Waiting for /mavros/state (30s timeout)
+      ↓
+    SET_GUIDED    ←──── Request GUIDED mode via service
+      ↓
+    ARM           ←──── Request arming (30s timeout)
+      ↓
+    TAKEOFF       ←──── Execute takeoff command (60s timeout)
+      ↓
+    NAVIGATE      ←──── Follow waypoints / hold position
+      ↓
+    HOLD          ←──── Safe hover state
+      ↓
+    RTL           ←──── Return to launch
+
+    ERROR         ←──── Terminal failure state
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                         CRITICAL BEHAVIORS                                ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+✅ SETPOINTS published at 10Hz CONTINUOUSLY (all states)
+✅ NO throttle control - position commands only
+✅ NO RC override - never hijacks RC channels
+✅ NO blocking loops - FSM runs at 10Hz
+✅ FCU disconnect → HOLD (not ERROR)
+✅ Mode change → HOLD (allows recovery)
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                          TOPIC INTERFACE                                  ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+SUBSCRIBES TO:
+  /mavros/state                      ← FCU connection, mode, armed status
+  /mavros/local_position/pose        ← Current position (local frame)
+  /mission/waypoint                  ← Target waypoint (optional)
+
+PUBLISHES TO:
+  /mavros/setpoint_position/local    → Continuous position commands (10Hz)
+  /drone1/navigation_status          → Current FSM state (1Hz)
+
+SERVICE CLIENTS:
+  /mavros/set_mode                   → Change flight mode
+  /mavros/cmd/arming                 → Arm/disarm motors
+  /mavros/cmd/takeoff                → Execute takeoff
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                            PARAMETERS                                     ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+takeoff_altitude_m      = 10.0       ← Target takeoff altitude
+setpoint_rate_hz        = 10.0       ← Setpoint publishing rate (≥10Hz!)
+fcu_timeout_sec         = 30.0       ← FCU connection timeout
+arming_timeout_sec      = 30.0       ← Arming timeout
+takeoff_timeout_sec     = 60.0       ← Takeoff completion timeout
+navigation_timeout_sec  = 300.0      ← Max navigation time
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                       STARTING THE NODE                                   ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+# Build workspace
+cd ~/Documents/ROSArkairo/drone1_ws
+colcon build --packages-select drone1_navigation
+source install/setup.bash
+
+# For SITL:
+ros2 run mavros mavros_node --ros-args \
+  -p fcu_url:=udp://:14550@127.0.0.1:14555
+
+# For Real Hardware:
+ros2 run mavros mavros_node --ros-args \
+  -p fcu_url:=serial:///dev/ttyUSB0:921600
+
+# Start navigation node:
+ros2 run drone1_navigation drone1_navigation_node \
+  --ros-args --params-file src/drone1_navigation/config/navigation_params.yaml
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                       SENDING WAYPOINTS                                   ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+ros2 topic pub /mission/waypoint geometry_msgs/PointStamped \
+  "{header: {frame_id: 'map'}, point: {x: 10.0, y: 5.0, z: 10.0}}"
+
+# Coordinates in local frame (ENU):
+#   X = East (meters)
+#   Y = North (meters)
+#   Z = Up (meters, relative to takeoff point)
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                        MONITORING                                         ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+# Watch FSM state changes:
+ros2 topic echo /drone1/navigation_status
+
+# Verify setpoint rate:
+ros2 topic hz /mavros/setpoint_position/local
+# Expected: ~10Hz
+
+# Monitor current position:
+ros2 topic echo /mavros/local_position/pose
+
+# Check FCU connection:
+ros2 topic echo /mavros/state
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                    EMERGENCY COMMANDS                                     ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+# Emergency RTL:
+ros2 service call /mavros/set_mode mavros_msgs/srv/SetMode \
+  "{custom_mode: 'RTL'}"
+
+# Emergency disarm (GROUND ONLY!):
+ros2 service call /mavros/cmd/arming mavros_msgs/srv/CommandBool \
+  "{value: false}"
+
+# RC OVERRIDE: Always keep RC transmitter on for manual override!
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                   COMMON FAILURE MODES                                    ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+"FCU connection timeout"
+  → Check: MAVROS running? USB connected? Cube powered?
+  
+"Arming rejected"
+  → Check: GPS fix? Compass calibrated? Safety switch?
+  → Run: Check ArduPilot pre-arm messages in GCS
+  
+"Lost GUIDED mode"
+  → Check: RC mode switch moved? Failsafe triggered?
+  → Node will transition to HOLD
+  
+"Takeoff timeout"
+  → Check: Motors spinning? Battery OK? EKF healthy?
+  
+Drone drifts
+  → Check: GPS accuracy, vibration levels, EKF variance
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                     PRE-FLIGHT CHECKLIST                                  ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+Hardware:
+  [ ] Props installed correctly
+  [ ] Battery charged and secured
+  [ ] USB cable connected (Pi ↔ Cube)
+  [ ] Cube booted (lights on)
+
+Software:
+  [ ] GPS 3D fix (8+ satellites)
+  [ ] Compass calibrated
+  [ ] MAVROS connected
+  [ ] Navigation node running
+  [ ] Setpoints publishing at 10Hz
+
+Safety:
+  [ ] RC transmitter on
+  [ ] Safety switch disengaged
+  [ ] Clear flight area
+  [ ] Emergency RTL configured on RC switch
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                         FILE LOCATIONS                                    ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+Node:         drone1_ws/src/drone1_navigation/drone1_navigation/
+              drone1_navigation_node.py
+
+Config:       drone1_ws/src/drone1_navigation/config/
+              navigation_params.yaml
+
+Docs:         drone1_ws/src/drone1_navigation/
+              NAVIGATION_GUIDE.md
+              IMPLEMENTATION_SUMMARY.md
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                    STATUS: READY FOR FLIGHT REVIEW                        ║
+╚═══════════════════════════════════════════════════════════════════════════╝

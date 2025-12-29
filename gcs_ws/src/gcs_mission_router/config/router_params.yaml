@@ -1,0 +1,22 @@
+# GCS Mission Router configuration
+/**:
+  ros__parameters:
+    # Dispatch settings
+    auto_dispatch: true # Automatically dispatch to ready drone
+    dispatch_delay_sec: 2.0 # Delay before dispatch
+
+    # Queue management
+    max_pending_targets: 50
+    fifo_priority: true # First-in-first-out
+
+    # Drone-2 status monitoring
+    drone2_timeout_sec: 30.0 # Consider drone offline after timeout
+    require_idle_status: true # Only dispatch when drone is idle
+
+    # Mission parameters
+    default_spray_duration_sec: 5.0
+    default_approach_altitude_m: 10.0
+
+    # Safety
+    max_missions_per_hour: 60
+    mission_cooldown_sec: 10.0

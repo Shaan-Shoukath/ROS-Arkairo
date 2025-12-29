@@ -1,0 +1,41 @@
+# Drone-2 Sprayer System Configuration
+
+gcs_to_d2_downlink_node:
+  ros__parameters:
+    require_confirmation: true
+    confirmation_timeout_sec: 5.0
+    override_altitude: true
+    target_altitude_m: 10.0
+
+drone2_navigation_node:
+  ros__parameters:
+    arrival_radius_m: 2.0
+    approach_speed: 3.0
+    approach_altitude_m: 10.0
+    update_rate_hz: 10.0
+
+local_detection_node:
+  ros__parameters:
+    confidence_threshold: 0.6
+    detection_timeout_sec: 30.0
+    max_detection_attempts: 5
+
+centering_controller_node:
+  ros__parameters:
+    image_width: 1920
+    image_height: 1080
+    centered_threshold_pixels: 30
+    max_velocity_mps: 0.5
+    kp: 0.002
+
+sprayer_control_node:
+  ros__parameters:
+    pwm_channel: 9
+    pwm_off: 1000
+    pwm_on: 2000
+    spray_duration_sec: 5.0
+
+mission_manager_node:
+  ros__parameters:
+    status_publish_rate_hz: 1.0
+    enable_logging: true

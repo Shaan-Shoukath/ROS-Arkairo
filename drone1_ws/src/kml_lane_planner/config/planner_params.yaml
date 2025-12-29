@@ -2,9 +2,9 @@
 /**:
   ros__parameters:
     # Missions folder - drop KML files here
-    missions_folder: "/home/shaan-shoukath/Documents/ROSArkairo/drone1_ws/missions"
+    missions_folder: "/home/pacman/Drone/ROS-Arkairo/drone1_ws/mission"
 
-    # Flight parameters
+    # Flight paramete
     altitude_m: 6.7 # Flight altitude in meters AGL (22 feet)
     lane_spacing_m: 5.0 # Distance between parallel lines (meters)
     buffer_distance_m: 2.0 # Buffer from polygon boundaries (meters)

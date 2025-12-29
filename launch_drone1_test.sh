@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 
 # =============================================================================
 # Drone-1 Full System Launch Script
@@ -19,7 +19,7 @@ echo "  4. Navigation Node"
 echo ""
 
 # Configuration
-WORKSPACE="/home/shaan-shoukath/Documents/ROSArkairo/drone1_ws"
+WORKSPACE="/home/pacman/Drone/ROS-Arkairo/drone1_ws"
 MISSIONS_FOLDER="${WORKSPACE}/missions"
 KML_FILE="SOE.kml"
 ALTITUDE=10.0
@@ -56,7 +56,7 @@ echo ""
 # ============================================================================
 echo "[1/4] Starting ArduPilot SITL..."
 if [[ "$TERMINAL" == "gnome-terminal" ]]; then
-    gnome-terminal --title="SITL - ArduCopter" -- zsh -c "
+    gnome-terminal --title="SITL - ArduCopter" -- bash -c "
         source ${VENV_PATH}
         echo 'ArduPilot venv activated'
         echo 'Starting ArduPilot SITL at Kerala location...'
@@ -66,16 +66,16 @@ if [[ "$TERMINAL" == "gnome-terminal" ]]; then
             --out=udp:127.0.0.1:14551 \
             --no-rebuild \
             --custom-location=10.0483,76.331,0,0
-        exec zsh
+        exec bash
     "
 elif [[ "$TERMINAL" == "konsole" ]]; then
-    konsole --new-tab -e zsh -c "
+    konsole --new-tab -e bash -c "
         source ${VENV_PATH}
         sim_vehicle.py -v ArduCopter -f quad --console --map --out=udp:127.0.0.1:14551 --no-rebuild --custom-location=10.0483,76.331,0,0
-        exec zsh
+        exec bash
     " &
 else
-    xterm -title "SITL" -e "zsh -c 'source ${VENV_PATH} && sim_vehicle.py -v ArduCopter -f quad --console --map --out=udp:127.0.0.1:14551 --no-rebuild --custom-location=10.0483,76.331,0,0; zsh'" &
+    xterm -title "SITL" -e "bash -c 'source ${VENV_PATH} && sim_vehicle.py -v ArduCopter -f quad --console --map --out=udp:127.0.0.1:14551 --no-rebuild --custom-location=10.0483,76.331,0,0; bash'" &
 fi
 
 # Wait for SITL to initialize (increased to 30s for GPS lock)
@@ -87,20 +87,20 @@ sleep ${SITL_DELAY}
 # ============================================================================
 echo "[2/4] Starting MAVROS..."
 if [[ "$TERMINAL" == "gnome-terminal" ]]; then
-    gnome-terminal --title="MAVROS" -- zsh -c "
-        source /opt/ros/jazzy/setup.zsh
+    gnome-terminal --title="MAVROS" -- bash -c "
+        source /opt/ros/jazzy/setup.bash
         echo 'Starting MAVROS...'
         ros2 launch mavros apm.launch fcu_url:=udp://:14551@127.0.0.1:14550
-        exec zsh
+        exec bash
     "
 elif [[ "$TERMINAL" == "konsole" ]]; then
-    konsole --new-tab -e zsh -c "
-        source /opt/ros/jazzy/setup.zsh
+    konsole --new-tab -e bash -c "
+        source /opt/ros/jazzy/setup.bash
         ros2 launch mavros apm.launch fcu_url:=udp://:14551@127.0.0.1:14550
-        exec zsh
+        exec bash
     " &
 else
-    xterm -title "MAVROS" -e "zsh -c 'source /opt/ros/jazzy/setup.zsh && ros2 launch mavros apm.launch fcu_url:=udp://:14551@127.0.0.1:14550; zsh'" &
+    xterm -title "MAVROS" -e "bash -c 'source /opt/ros/jazzy/setup.bash && ros2 launch mavros apm.launch fcu_url:=udp://:14551@127.0.0.1:14550; bash'" &
 fi
 
 # Wait for MAVROS to connect (increased to 15s)
@@ -112,10 +112,10 @@ sleep ${MAVROS_DELAY}
 # ============================================================================
 echo "[3/4] Starting KML Lane Planner..."
 if [[ "$TERMINAL" == "gnome-terminal" ]]; then
-    gnome-terminal --title="KML Planner" -- zsh -c "
+    gnome-terminal --title="KML Planner" -- bash -c "
         cd ${WORKSPACE}
-        source /opt/ros/jazzy/setup.zsh
-        source install/setup.zsh
+        source /opt/ros/jazzy/setup.bash
+        source install/setup.bash
         echo 'Starting KML Lane Planner...'
         ros2 run kml_lane_planner kml_lane_planner_node --ros-args \
             -p missions_folder:=${MISSIONS_FOLDER} \
@@ -123,17 +123,17 @@ if [[ "$TERMINAL" == "gnome-terminal" ]]; then
             -p lane_spacing_m:=${LANE_SPACING} \
             -p altitude_m:=${ALTITUDE} \
             -p enable_republish:=false
-        exec zsh
+        exec bash
     "
 elif [[ "$TERMINAL" == "konsole" ]]; then
-    konsole --new-tab -e zsh -c "
+    konsole --new-tab -e bash -c "
         cd ${WORKSPACE}
-        source /opt/ros/jazzy/setup.zsh && source install/setup.zsh
+        source /opt/ros/jazzy/setup.bash && source install/setup.bash
         ros2 run kml_lane_planner kml_lane_planner_node --ros-args -p missions_folder:=${MISSIONS_FOLDER} -p kml_filename:=${KML_FILE} -p lane_spacing_m:=${LANE_SPACING} -p altitude_m:=${ALTITUDE} -p enable_republish:=false
-        exec zsh
+        exec bash
     " &
 else
-    xterm -title "KML Planner" -e "zsh -c 'cd ${WORKSPACE} && source /opt/ros/jazzy/setup.zsh && source install/setup.zsh && ros2 run kml_lane_planner kml_lane_planner_node --ros-args -p missions_folder:=${MISSIONS_FOLDER} -p kml_filename:=${KML_FILE} -p lane_spacing_m:=${LANE_SPACING} -p altitude_m:=${ALTITUDE} -p enable_republish:=false; zsh'" &
+    xterm -title "KML Planner" -e "bash -c 'cd ${WORKSPACE} && source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 run kml_lane_planner kml_lane_planner_node --ros-args -p missions_folder:=${MISSIONS_FOLDER} -p kml_filename:=${KML_FILE} -p lane_spacing_m:=${LANE_SPACING} -p altitude_m:=${ALTITUDE} -p enable_republish:=false; bash'" &
 fi
 
 # Wait for KML planner to process and publish
@@ -145,10 +145,10 @@ sleep ${KML_DELAY}
 # ============================================================================
 echo "[4/4] Starting Navigation Node..."
 if [[ "$TERMINAL" == "gnome-terminal" ]]; then
-    gnome-terminal --title="Navigation" -- zsh -c "
+    gnome-terminal --title="Navigation" -- bash -c "
         cd ${WORKSPACE}
-        source /opt/ros/jazzy/setup.zsh
-        source install/setup.zsh
+        source /opt/ros/jazzy/setup.bash
+        source install/setup.bash
         echo 'Starting Navigation Node...'
         ros2 run drone1_navigation drone1_navigation_node --ros-args \
             -p takeoff_altitude_m:=${ALTITUDE} \
@@ -157,17 +157,17 @@ if [[ "$TERMINAL" == "gnome-terminal" ]]; then
             -p path_max_target_step_m:=${MAX_TARGET_STEP_M} \
             -p path_end_radius_m:=${END_RADIUS_M} \
             -p fcu_timeout_sec:=60.0
-        exec zsh
+        exec bash
     "
 elif [[ "$TERMINAL" == "konsole" ]]; then
-    konsole --new-tab -e zsh -c "
+    konsole --new-tab -e bash -c "
         cd ${WORKSPACE}
-        source /opt/ros/jazzy/setup.zsh && source install/setup.zsh
+        source /opt/ros/jazzy/setup.bash && source install/setup.bash
         ros2 run drone1_navigation drone1_navigation_node --ros-args -p takeoff_altitude_m:=${ALTITUDE} -p navigation_altitude_m:=${ALTITUDE} -p path_lookahead_m:=${LOOKAHEAD_M} -p path_max_target_step_m:=${MAX_TARGET_STEP_M} -p path_end_radius_m:=${END_RADIUS_M} -p fcu_timeout_sec:=60.0
-        exec zsh
+        exec bash
     " &
 else
-    xterm -title "Navigation" -e "zsh -c 'cd ${WORKSPACE} && source /opt/ros/jazzy/setup.zsh && source install/setup.zsh && ros2 run drone1_navigation drone1_navigation_node --ros-args -p takeoff_altitude_m:=${ALTITUDE} -p navigation_altitude_m:=${ALTITUDE} -p path_lookahead_m:=${LOOKAHEAD_M} -p path_max_target_step_m:=${MAX_TARGET_STEP_M} -p path_end_radius_m:=${END_RADIUS_M} -p fcu_timeout_sec:=60.0; zsh'" &
+    xterm -title "Navigation" -e "bash -c 'cd ${WORKSPACE} && source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 run drone1_navigation drone1_navigation_node --ros-args -p takeoff_altitude_m:=${ALTITUDE} -p navigation_altitude_m:=${ALTITUDE} -p path_lookahead_m:=${LOOKAHEAD_M} -p path_max_target_step_m:=${MAX_TARGET_STEP_M} -p path_end_radius_m:=${END_RADIUS_M} -p fcu_timeout_sec:=60.0; bash'" &
 fi
 
 echo ""

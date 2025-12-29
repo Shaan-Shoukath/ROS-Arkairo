@@ -461,7 +461,7 @@ class KmlLanePlannerNode(Node):
         super().__init__('kml_lane_planner_node')
         
         # Declare parameters
-        self.declare_parameter('missions_folder', '/home/shaan-shoukath/Documents/ROSArkairo/drone1_ws/missions')
+        self.declare_parameter('missions_folder', 'missions')
         self.declare_parameter('kml_filename', '')  # Specific KML file to load
         self.declare_parameter('altitude_m', 6.7)  # 22 feet
         self.declare_parameter('lane_spacing_m', 5.0)

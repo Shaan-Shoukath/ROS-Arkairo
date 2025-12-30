@@ -102,18 +102,12 @@ def generate_launch_description():
             arguments=['--ros-args', '--log-level', log_level]
         ),
         
-        # GCS Uplink
+        # Telemetry TX (direct drone-to-drone communication)
         Node(
-            package='d1_to_gcs_uplink',
-            executable='d1_to_gcs_uplink_node',
-            name='d1_to_gcs_uplink_node',
+            package='telem_tx',
+            executable='telem_tx_node',
+            name='telem_tx_node',
             output='screen',
-            parameters=[
-                PathJoinSubstitution([
-                    FindPackageShare('d1_to_gcs_uplink'),
-                    'config', 'uplink_params.yaml'
-                ])
-            ],
             arguments=['--ros-args', '--log-level', log_level]
         ),
     ])

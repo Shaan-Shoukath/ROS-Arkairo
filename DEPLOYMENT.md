@@ -89,16 +89,12 @@ These contain launch files that start all nodes for each system:
 - `drone1_navigation_node` - Survey waypoint following
 - `image_capture_node` - Camera feed capture
 - `detection_and_geotag_node` - Disease detection with GPS
-- `d1_to_gcs_uplink_node` - Target forwarding to GCS
-
-**`gcs_bringup` → `gcs.launch.py`** launches:
-
-- `gcs_target_receiver_node` - Target validation
-- `gcs_mission_router_node` - Mission dispatch to Drone-2
+- `telem_tx_node` - Direct telemetry TX to Drone-2
 
 **`drone2_bringup` → `drone2_sprayer.launch.py`** launches:
 
-- `gcs_to_d2_downlink_node` - GCS command reception
+- `telem_rx_node` - Receives geotags from Drone-1 telemetry
+- `gcs_to_d2_downlink_node` - Target validation and dispatch
 - `drone2_navigation_node` - Target navigation
 - `local_detection_node` - Local disease confirmation
 - `centering_controller_node` - PID visual servoing
@@ -176,16 +172,17 @@ source ~/.bashrc
 ```bash
 # Build all workspaces (message packages are built automatically as dependencies)
 cd ~/Documents/ROSArkairo/drone1_ws && colcon build --symlink-install
-source install/setup.bash  # or setup.zsh for zsh users
-
-cd ~/Documents/ROSArkairo/gcs_ws && colcon build --symlink-install
-source install/setup.bash
+source install/setup.zsh
 
 cd ~/Documents/ROSArkairo/drone2_ws && colcon build --symlink-install
-source install/setup.bash
+source install/setup.zsh
+
+# Optional: GCS for monitoring only (not required for operation)
+cd ~/Documents/ROSArkairo/gcs_ws && colcon build --symlink-install
+source install/setup.zsh
 ```
 
-> **Note for ZSH users**: Replace `setup.bash` with `setup.zsh`
+> **Note**: GCS is optional - drones communicate directly via telemetry.
 
 ### Step 3: Launch SITL + MAVROS
 
@@ -207,7 +204,7 @@ Wait for "Ready to FLY" message.
 **Terminal 2 - MAVROS:**
 
 ```bash
-source /opt/ros/${ROS_DISTRO}/setup.bash
+source /opt/ros/${ROS_DISTRO}/setup.zsh
 ros2 launch mavros apm.launch.py fcu_url:=udp://:14550@127.0.0.1:14555
 ```
 
@@ -223,7 +220,7 @@ ros2 topic echo /mavros/state  # Should show connected: true
 
 ```bash
 cd ~/Documents/ROSArkairo/drone1_ws
-source install/setup.bash
+source install/setup.zsh
 ros2 launch drone1_bringup drone1_survey.launch.py
 ```
 
@@ -322,15 +319,15 @@ ros2 launch mavros apm.launch.py \
 
 ```bash
 # Terminal 5 - Drone-1 (5 nodes)
-cd ~/Documents/ROSArkairo/drone1_ws && source install/setup.bash
+cd ~/Documents/ROSArkairo/drone1_ws && source install/setup.zsh
 ros2 launch drone1_bringup drone1_survey.launch.py
 
 # Terminal 6 - GCS (2 nodes)
-cd ~/Documents/ROSArkairo/gcs_ws && source install/setup.bash
+cd ~/Documents/ROSArkairo/gcs_ws && source install/setup.zsh
 ros2 launch gcs_bringup gcs.launch.py auto_dispatch:=true
 
 # Terminal 7 - Drone-2 (6 nodes)
-cd ~/Documents/ROSArkairo/drone2_ws && source install/setup.bash
+cd ~/Documents/ROSArkairo/drone2_ws && source install/setup.zsh
 ros2 launch drone2_bringup drone2_sprayer.launch.py
 ```
 

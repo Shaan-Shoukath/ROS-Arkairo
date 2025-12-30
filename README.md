@@ -2,9 +2,9 @@
 
 **Made by Shaan Shoukath**
 
-A production-grade ROS2 dual-drone system for **fully autonomous** field surveying and precision spraying, coordinated through a Ground Control Station (GCS).
+A production-grade ROS 2 dual-drone system for **fully autonomous** field surveying and precision spraying with **direct telemetry communication** between drones.
 
-![ROS2](https://img.shields.io/badge/ROS2-Humble%20|%20Iron%20|%20Jazzy-blue)
+![ROS2](https://img.shields.io/badge/ROS2-Jazzy-blue)
 ![License](https://img.shields.io/badge/License-Apache%202.0-green)
 ![Packages](https://img.shields.io/badge/Packages-19-orange)
 ![Autonomous](https://img.shields.io/badge/Mode-Fully%20Autonomous-brightgreen)
@@ -16,32 +16,52 @@ A production-grade ROS2 dual-drone system for **fully autonomous** field surveyi
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                    FULLY AUTONOMOUS OPERATION                           │
+│                    (Direct Telemetry - GCS-Free)                        │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│  Drone-1 (Survey)          GCS              Drone-2 (Sprayer)          │
-│  ┌───────────────┐    ┌──────────┐    ┌─────────────────────┐         │
-│  │ KML→Auto-Arm  │    │ Target   │    │ IDLE until geotag  │         │
-│  │ Takeoff       │    │ Receiver │    │ Auto-Arm on 1st    │         │
-│  │ Survey        │───►│ Mission  │───►│ Navigate→Spray     │         │
-│  │ Detect→Geotag │    │ Router   │    │ 5s Wait→Next/RTL   │         │
-│  │ RTL           │    │          │    │                     │         │
-│  └───────────────┘    └──────────┘    └─────────────────────┘         │
+│  Drone-1 (Survey)                          Drone-2 (Sprayer)           │
+│  ┌───────────────┐                    ┌─────────────────────┐         │
+│  │ KML→Auto-Arm  │                    │ IDLE until geotag  │         │
+│  │ Takeoff       │                    │ Auto-Arm on 1st    │         │
+│  │ Survey        │═══TELEMETRY═══════►│ Navigate→Spray     │         │
+│  │ Detect→Geotag │    (MAVLink)       │ 5s Wait→Next/RTL   │         │
+│  │ RTL           │                    │                     │         │
+│  └───────────────┘                    └─────────────────────┘         │
 │                                                                         │
-│  ═══════════════════════ TELEMETRY LINK ═══════════════════════════   │
+│  ═══════════════ DIRECT SiK RADIO LINK (No GCS) ═══════════════════   │
 │                                                                         │
 │  🛡️ TF-Luna Object Avoidance: Handled by ArduPilot (Cube Orange+)      │
 └─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Direct Telemetry Data Flow
+
+```
+Drone-1                                              Drone-2
+┌─────────────────────┐                    ┌─────────────────────┐
+│ detection_and_      │                    │ telem_rx_node       │
+│ geotag_node         │                    │   ↓                 │
+│   ↓                 │                    │ gcs_to_d2_downlink  │
+│ /drone1/disease_    │    MAVLink         │   ↓                 │
+│ geotag              │    NAMED_VALUE_    │ /drone2/target_     │
+│   ↓                 │    FLOAT           │ geotag              │
+│ telem_tx_node       │═══════════════════►│   ↓                 │
+│   ↓                 │    (d_lat,d_lon,   │ Navigation→Spray    │
+│ MAVROS              │     d_alt)         │                     │
+└─────────────────────┘                    └─────────────────────┘
 ```
 
 ---
 
 ## 📁 Workspace Structure
 
-| Workspace   | Packages | Description                                          |
-| ----------- | -------- | ---------------------------------------------------- |
-| `drone1_ws` | 7        | Survey drone - KML planning, navigation, detection   |
-| `gcs_ws`    | 4        | Ground Control Station - routing and coordination    |
-| `drone2_ws` | 8        | Sprayer drone - navigation, centering, spray control |
+| Workspace   | Packages | Description                                                        |
+| ----------- | -------- | ------------------------------------------------------------------ |
+| `drone1_ws` | 8        | Survey drone - KML planning, navigation, detection, telemetry TX   |
+| `drone2_ws` | 9        | Sprayer drone - telemetry RX, navigation, centering, spray control |
+| `gcs_ws`    | 4        | Ground Control Station - _optional monitoring only_                |
+
+> **Note**: GCS is now optional - drones communicate directly via telemetry.
 
 ---
 
@@ -49,29 +69,31 @@ A production-grade ROS2 dual-drone system for **fully autonomous** field surveyi
 
 ### Drone-1 (Survey System)
 
-| Node                   | Description                             | Documentation                                             |
-| ---------------------- | --------------------------------------- | --------------------------------------------------------- |
-| **KML Lane Planner**   | Converts KML boundaries to survey paths | [📄 README](drone1_ws/src/kml_lane_planner/README.md)     |
-| **Drone-1 Navigation** | Executes survey waypoints via MAVROS    | [📄 README](drone1_ws/src/drone1_navigation/README.md)    |
-| **Detection & Geotag** | Disease detection with GPS ray-casting  | [📄 README](drone1_ws/src/detection_and_geotag/README.md) |
+| Node                     | Description                              | Documentation                                             |
+| ------------------------ | ---------------------------------------- | --------------------------------------------------------- |
+| **KML Lane Planner**     | Converts KML boundaries to survey paths  | [📄 README](drone1_ws/src/kml_lane_planner/README.md)     |
+| **Drone-1 Navigation**   | Executes survey waypoints via MAVROS     | [📄 README](drone1_ws/src/drone1_navigation/README.md)    |
+| **Detection & Geotag**   | Disease detection with GPS ray-casting   | [📄 README](drone1_ws/src/detection_and_geotag/README.md) |
+| **Telemetry TX** _(NEW)_ | Transmits geotags over MAVLink telemetry | [📄 README](drone1_ws/src/telem_tx/README.md)             |
 
-### Ground Control Station
+### Drone-2 (Sprayer System)
+
+| Node                     | Description                          | Documentation                                             |
+| ------------------------ | ------------------------------------ | --------------------------------------------------------- |
+| **Telemetry RX** _(NEW)_ | Receives geotags from telemetry      | [📄 README](drone2_ws/src/telem_rx/README.md)             |
+| **GCS Downlink**         | Validates and dispatches targets     | [📄 README](drone2_ws/src/gcs_to_d2_downlink/README.md)   |
+| **Drone-2 Navigation**   | Navigates to target locations        | [📄 README](drone2_ws/src/drone2_navigation/README.md)    |
+| **Local Detection**      | Confirms disease presence on arrival | [📄 README](drone2_ws/src/local_detection/README.md)      |
+| **Centering Controller** | PID visual servoing for alignment    | [📄 README](drone2_ws/src/centering_controller/README.md) |
+| **Sprayer Control**      | PWM actuation with safety checks     | [📄 README](drone2_ws/src/sprayer_control/README.md)      |
+| **Mission Manager**      | State machine and status reporting   | [📄 README](drone2_ws/src/mission_manager/README.md)      |
+
+### Ground Control Station _(Optional)_
 
 | Node                | Description                            | Documentation                                         |
 | ------------------- | -------------------------------------- | ----------------------------------------------------- |
 | **Target Receiver** | Validates and filters incoming targets | [📄 README](gcs_ws/src/gcs_target_receiver/README.md) |
-| **Mission Router**  | Dispatches missions to Drone-2         | [📄 README](gcs_ws/src/gcs_mission_router/README.md)  |
-
-### Drone-2 (Sprayer System)
-
-| Node                     | Description                             | Documentation                                             |
-| ------------------------ | --------------------------------------- | --------------------------------------------------------- |
-| **GCS Downlink**         | Converts GCS commands to local triggers | [📄 README](drone2_ws/src/gcs_to_d2_downlink/README.md)   |
-| **Drone-2 Navigation**   | Navigates to target locations           | [📄 README](drone2_ws/src/drone2_navigation/README.md)    |
-| **Local Detection**      | Confirms disease presence on arrival    | [📄 README](drone2_ws/src/local_detection/README.md)      |
-| **Centering Controller** | PID visual servoing for alignment       | [📄 README](drone2_ws/src/centering_controller/README.md) |
-| **Sprayer Control**      | PWM actuation with safety checks        | [📄 README](drone2_ws/src/sprayer_control/README.md)      |
-| **Mission Manager**      | State machine and GCS reporting         | [📄 README](drone2_ws/src/mission_manager/README.md)      |
+| **Mission Router**  | Dispatches missions (legacy mode)      | [📄 README](gcs_ws/src/gcs_mission_router/README.md)  |
 
 ---
 
@@ -111,19 +133,6 @@ Watches the `missions/` folder for KML files defining field boundaries. When a n
 
 ---
 
-#### 📷 Image Capture Node
-
-Camera abstraction layer that captures and publishes raw images during survey flight:
-
-- Initializes USB camera via OpenCV
-- Publishes `sensor_msgs/Image` at configurable frame rate
-- Publishes `sensor_msgs/CameraInfo` with camera intrinsics
-- Supports simulation mode with generated test images
-
-**Key Features**: Configurable resolution, auto-retry on camera failure, test mode for SITL
-
----
-
 #### 🔬 Detection and Geotag Node
 
 Processes camera frames to detect crop disease (yellow spots) and compute GPS coordinates:
@@ -138,61 +147,46 @@ Processes camera frames to detect crop disease (yellow spots) and compute GPS co
 
 ---
 
-#### 📡 D1 to GCS Uplink Node
+#### 📡 Telemetry TX Node _(NEW)_
 
-Forwards validated disease geotags from Drone-1 to the Ground Control Station:
+Transmits disease geotags directly to Drone-2 over MAVLink telemetry (SiK radio):
 
-- Queues incoming geotags for reliable transmission
-- Rate-limits transmissions to avoid network congestion
-- Implements retry logic for failed transmissions
-- Publishes heartbeat for link monitoring
+- Subscribes to `/drone1/disease_geotag`
+- Encodes GPS coordinates as NAMED_VALUE_FLOAT messages:
+  - `d_lat` → latitude
+  - `d_lon` → longitude
+  - `d_alt` → altitude
+- Publishes to `/mavros/named_value_float/send`
+- MAVROS forwards to autopilot, which transmits over telemetry
 
-**Key Features**: Configurable queue size, retry mechanism, transmission statistics
-
----
-
-### Ground Control Station
-
-#### 🎯 GCS Target Receiver Node
-
-Receives and validates target reports from Drone-1:
-
-- Validates GPS coordinates are within acceptable bounds
-- Checks against configurable geofence
-- Filters duplicate targets within time window and distance threshold
-- Assigns unique target IDs
-- Saves validated targets to JSON file
-
-**Key Features**: Geofence validation, time-based deduplication, persistent logging
-
----
-
-#### 🚦 GCS Mission Router Node
-
-Controls mission dispatch to Drone-2 based on validated targets and drone status:
-
-- Maintains queue of pending targets
-- Monitors Drone-2 operational status (`IDLE`, `NAVIGATING`, `SPRAYING`, etc.)
-- Only dispatches when Drone-2 is available and not on active mission
-- Implements hourly rate limiting for safety
-- Sends target geotag and mission start trigger
-
-**Key Features**: Auto-dispatch mode, status monitoring, rate limiting, queue management
+**Key Features**: No GCS dependency, direct drone-to-drone communication, preserves all detection data
 
 ---
 
 ### Drone-2 (Sprayer System)
 
+#### 📡 Telemetry RX Node _(NEW)_
+
+Receives disease geotags from Drone-1 via MAVLink telemetry:
+
+- Subscribes to `/mavros/named_value_float`
+- Buffers incoming `d_lat`, `d_lon`, `d_alt` fields
+- Reconstructs complete `GeoPointStamped` when all 3 fields received
+- Publishes to `/drone2/target_geotag`
+
+**Key Features**: Message buffering with timeout, automatic buffer clearing, seamless integration with existing nodes
+
+---
+
 #### 📥 GCS to D2 Downlink Node
 
-Bridges GCS commands to local Drone-2 mission execution:
+Validates and dispatches target coordinates for navigation:
 
-- Receives target geotags from GCS telemetry link
+- Receives target geotags from telemetry RX node (or GCS in legacy mode)
 - Validates coordinates and checks distance from current position
-- Waits for mission start trigger before dispatching
-- Converts GCS commands to local `NavSatFix` for navigation
+- Converts to local `NavSatFix` for navigation
 
-**Key Features**: Coordinate validation, max distance check, timeout handling
+**Key Features**: Coordinate validation, max distance check, altitude override
 
 ---
 
@@ -204,48 +198,8 @@ Navigates to target location using global position setpoints:
 - Publishes `GlobalPositionTarget` via MAVROS
 - Monitors distance to target using Haversine calculation
 - Publishes arrival status when within configurable radius
-- Implements navigation timeout for safety
 
 **Key Features**: Continuous setpoint publishing, timeout protection, arrival detection
-
----
-
-#### 🔎 Local Detection Node
-
-Confirms disease presence upon arrival at target location:
-
-- Activates when `arrival_status` is received
-- Processes camera frames to re-detect disease locally
-- Requires configurable number of consecutive detections for confirmation
-- Publishes bounding box for centering controller
-
-**Key Features**: Multi-frame confirmation, timeout protection, false positive filtering
-
----
-
-#### 🎯 Centering Controller Node
-
-Fine-tunes drone position to align spray nozzle over target using visual servoing:
-
-- Uses PID control to minimize pixel error from image center
-- Subscribes to bounding box from local detection
-- Publishes velocity commands via MAVROS
-- Stops and signals ready when target is centered (within pixel threshold)
-
-**Key Features**: Configurable PID gains, velocity limiting, timeout protection
-
----
-
-#### 💦 Sprayer Control Node
-
-Controls spray actuation via PWM output with safety checks:
-
-- Waits for `spray_ready` signal from centering controller
-- Performs safety checks (armed status, flight mode, altitude)
-- Actuates spray pump for configurable duration
-- Publishes `spray_done` when complete
-
-**Key Features**: PWM control, safety interlocks, spray duration timer, statistics tracking
 
 ---
 
@@ -258,7 +212,6 @@ Controls spray actuation via PWM output with safety checks:
 - Tracks state: `IDLE → ARMING → TAKING_OFF → NAVIGATING → DETECTING → CENTERING → SPRAYING → WAITING_FOR_NEXT`
 - **5-second wait window** after each spray for next geotag
 - **Auto-RTL** if no geotag received within wait window
-- Reports all state changes to GCS
 
 **Key Features**: Configurable `wait_timeout_sec` (default 5s), MAVROS service integration, deterministic behavior
 
@@ -270,7 +223,7 @@ Controls spray actuation via PWM output with safety checks:
 
 ### Prerequisites
 
-```bash
+```zsh
 # ROS2 dependencies
 sudo apt install ros-${ROS_DISTRO}-mavros ros-${ROS_DISTRO}-mavros-extras
 sudo apt install ros-${ROS_DISTRO}-cv-bridge ros-${ROS_DISTRO}-vision-msgs
@@ -282,63 +235,65 @@ pip3 install scipy geopy
 
 ### Build All Workspaces
 
-```bash
+```zsh
 # Drone-1
 cd ~/Documents/ROSArkairo/drone1_ws
 colcon build --symlink-install
-source install/setup.bash
-
-# GCS
-cd ~/Documents/ROSArkairo/gcs_ws
-colcon build --symlink-install
-source install/setup.bash
+source install/setup.zsh
 
 # Drone-2
 cd ~/Documents/ROSArkairo/drone2_ws
 colcon build --symlink-install
-source install/setup.bash
+source install/setup.zsh
+
+# GCS (optional - for monitoring only)
+cd ~/Documents/ROSArkairo/gcs_ws
+colcon build --symlink-install
+source install/setup.zsh
 ```
 
-### Launch Systems
+### Launch Systems (Direct Telemetry Mode)
 
-```bash
-# Terminal 1 - Drone-1 Survey
+```zsh
+# Terminal 1 - Drone-1 Survey (includes telemetry TX)
 ros2 launch drone1_bringup drone1_survey.launch.py
 
-# Terminal 2 - GCS
-ros2 launch gcs_bringup gcs.launch.py
-
-# Terminal 3 - Drone-2 Sprayer
+# Terminal 2 - Drone-2 Sprayer (includes telemetry RX)
 ros2 launch drone2_bringup drone2_sprayer.launch.py
+
+# NO GCS REQUIRED!
 ```
 
 ### Run a Mission (Fully Autonomous)
 
-```bash
+```zsh
 # Drop KML file to start - everything else is automatic!
 cp field_boundary.kml ~/Documents/ROSArkairo/drone1_ws/missions/
 
-# Drone-1 will: Arm → Takeoff (22ft) → Survey → Detect → Publish geotags → RTL
-# Drone-2 will: Wait → Arm on geotag → Fly → Spray → Wait 5s → Next/RTL
+# Drone-1 will: Arm → Takeoff (22ft) → Survey → Detect → Transmit geotags → RTL
+# Drone-2 will: Wait → Receive geotag → Arm → Fly → Spray → Wait 5s → Next/RTL
 ```
 
 ---
 
 ## 📡 Topic Reference
 
-### Drone-1 ↔ GCS
+### Drone-1 → Drone-2 (Direct Telemetry)
 
-| Topic                | Direction | Type            | Description     |
-| -------------------- | --------- | --------------- | --------------- |
-| `/gcs/target_report` | D1 → GCS  | GeoPointStamped | Disease geotags |
+| Topic                            | Direction | Type            | Description           |
+| -------------------------------- | --------- | --------------- | --------------------- |
+| `/drone1/disease_geotag`         | D1 Local  | GeoPointStamped | Detected disease      |
+| `/mavros/named_value_float/send` | D1→Telem  | NamedValueFloat | MAVLink transport     |
+| `/mavros/named_value_float`      | Telem→D2  | NamedValueFloat | Received from Drone-1 |
+| `/drone2/target_geotag`          | D2 Local  | GeoPointStamped | Reconstructed target  |
 
-### GCS ↔ Drone-2
+### Drone-2 Internal
 
-| Topic                   | Direction | Type            | Description     |
-| ----------------------- | --------- | --------------- | --------------- |
-| `/drone2/target_geotag` | GCS → D2  | GeoPointStamped | Target location |
-| `/drone2/mission_start` | GCS → D2  | Bool            | Mission trigger |
-| `/drone2/status`        | D2 → GCS  | String          | Current state   |
+| Topic                         | Type      | Description       |
+| ----------------------------- | --------- | ----------------- |
+| `/drone2/target_position`     | NavSatFix | Navigation target |
+| `/drone2/new_target_received` | Bool      | Mission trigger   |
+| `/drone2/status`              | String    | Current state     |
 
 ---
 
@@ -350,17 +305,18 @@ cp field_boundary.kml ~/Documents/ROSArkairo/drone1_ws/missions/
 | **Ray-Casting GPS**    | Detection Node       | Pixel to GPS using camera intrinsics + IMU |
 | **PID Control**        | Centering Controller | Visual servoing for target alignment       |
 | **Haversine Distance** | All navigation       | GPS distance calculation                   |
+| **MAVLink Encoding**   | Telemetry TX/RX      | GPS to NAMED_VALUE_FLOAT conversion        |
 
 ---
 
-## ⚠️ Non-Negotiable Rules
+## ⚠️ Design Rules
 
 | Rule                                 | Reason                         |
 | ------------------------------------ | ------------------------------ |
 | ❌ ROS never touches TF-Luna         | Flight controller owns sensors |
-| ❌ GCS never sends low-level control | Separation of concerns         |
-| ❌ No drone-to-drone direct links    | GCS coordination only          |
+| ❌ No UDP/DDS bridges between drones | Prevents network dependency    |
 | ✅ MAVROS is the only FC interface   | Standardized MAVLink           |
+| ✅ MAVLink for inter-drone comms     | Uses existing telemetry link   |
 | ✅ One node = one responsibility     | Clean architecture             |
 
 ---
@@ -369,10 +325,10 @@ cp field_boundary.kml ~/Documents/ROSArkairo/drone1_ws/missions/
 
 | Workspace | Message Pkgs | Node Pkgs | Launch Pkgs |
 | --------- | ------------ | --------- | ----------- |
-| drone1_ws | 1            | 5         | 1           |
+| drone1_ws | 1            | 6         | 1           |
+| drone2_ws | 1            | 7         | 1           |
 | gcs_ws    | 1            | 2         | 1           |
-| drone2_ws | 1            | 6         | 1           |
-| **Total** | 3            | 13        | 3           |
+| **Total** | 3            | 15        | 3           |
 
 ---
 
@@ -388,14 +344,12 @@ cp field_boundary.kml ~/Documents/ROSArkairo/drone1_ws/missions/
 
 **Terminal 1 - ArduCopter SITL at Kerala Location:**
 
-```bash
+```zsh
 cd ~/Documents/ROSArkairo
 ./start_sitl_kerala.sh
 ```
 
 ✅ Wait for: `APM: EKF2 IMU0 is using GPS` and `Ready to FLY`
-
-_This starts SITL at your home location (10.047833°N, 76.330278°E) so the drone is already near mission waypoints._
 
 **🔧 In the MAVProxy console (SITL window), disable horizon check for indoor SITL testing:**
 
@@ -410,9 +364,9 @@ This disables arming checks for SITL. **DO NOT use on real hardware!**
 
 **Terminal 2 - MAVROS:**
 
-```bash
+```zsh
 cd ~/Documents/ROSArkairo/drone1_ws
-source install/setup.zsh  # or setup.bash
+source install/setup.zsh
 ros2 run mavros mavros_node --ros-args \
   -p fcu_url:=udp://:14550@127.0.0.1:14555 \
   -p gcs_url:=udp://@127.0.0.1:14550
@@ -420,62 +374,34 @@ ros2 run mavros mavros_node --ros-args \
 
 ✅ Wait for: `[INFO] [mavros.sys]: FCU: ArduCopter V4.X.X`
 
-⚠️ **Keep this running - don't press Ctrl+C!**
-
 ---
 
 **Terminal 3 - KML Lane Planner:**
 
-```bash
+```zsh
 cd ~/Documents/ROSArkairo/drone1_ws
-source install/setup.zsh  # or setup.bash
+source install/setup.zsh
 ros2 run kml_lane_planner kml_lane_planner_node --ros-args \
-  -p missions_folder:=/home/YOUR_USERNAME/Documents/ROSArkairo/drone1_ws/missions \
+  -p missions_folder:=$HOME/Documents/ROSArkairo/drone1_ws/missions \
   -p kml_filename:=SOE.kml \
   -p lane_spacing_m:=10.0 \
   -p altitude_m:=50.0
 ```
 
-✅ Wait for:
-
-- `[INFO] Published mission X with X lane segments`
-- `[INFO] Waypoints logged to: SOE_waypoints_XXXXXX.waypoints`
-
 ---
 
 **Terminal 4 - Navigation Node:**
 
-```bash
+```zsh
 cd ~/Documents/ROSArkairo/drone1_ws
-source install/setup.zsh  # or setup.bash
+source install/setup.zsh
 ros2 run drone1_navigation drone1_navigation_node --ros-args \
   --params-file src/drone1_navigation/config/navigation_params.yaml
 ```
 
-**Expected Sequence:**
-
-```
-[INFO] FSM: INIT → WAIT_FOR_FCU
-[INFO] ★ Mission received: XX waypoints from X lanes
-[INFO] FSM: WAIT_FOR_FCU → SET_GUIDED
-[INFO] FSM: SET_GUIDED → ARM
-[INFO] FSM: ARM → TAKEOFF
-[INFO] Takeoff complete at 50.0m relative
-[INFO] ★ Starting navigation to XX waypoints
-[INFO] FSM: TAKEOFF → NAVIGATE
-[INFO] Flying to WP 1/XX: Distance: XX.Xm
-[INFO] ★ DETECTION ENABLED - Starting survey ★
-[INFO] Publishing setpoint to WP1: lat=XX.XXXXXX, lon=XX.XXXXXX
-...
-[INFO] ★ ALL WAYPOINTS COMPLETE ★
-[INFO] FSM: NAVIGATE → RTL
-```
-
 ### Monitoring
 
-**Check topics (Terminal 5 - Optional):**
-
-```bash
+```zsh
 cd ~/Documents/ROSArkairo/drone1_ws
 source install/setup.zsh
 ros2 topic list | grep -E "mavros|mission|detection"
@@ -483,30 +409,14 @@ ros2 topic echo /drone1/navigation_status
 ros2 topic echo /drone1/detection_enable
 ```
 
-**View generated waypoints:**
-
-```bash
-cat ~/Documents/ROSArkairo/drone1_ws/missions/SOE_waypoints_*.waypoints
-```
-
 ### Troubleshooting
 
-| Issue                | Solution                                                             |
-| -------------------- | -------------------------------------------------------------------- |
-| "FCU timeout"        | Ensure Terminal 2 (MAVROS) is running with `FCU: ArduCopter` message |
-| "No waypoints"       | Restart Terminal 3 (KML planner) after Terminal 4 is running         |
-| "Takeoff timeout"    | Wait 30s after SITL starts before running navigation node            |
-| Drone not moving     | Check MAVROS topics exist: `ros2 topic list \| grep mavros`          |
-| Mission became stale | Restart all terminals - ensure MAVROS stays running                  |
-
-### Test Mission File
-
-The included `missions/SOE.kml` contains a ~100m×100m test field at coordinates:
-
-- Center: 10.0478°N, 76.3303°E (Kerala, India)
-- Altitude: 50m AGL
-- Pattern: Lawnmower with 10m lane spacing
-- Expected waypoints: 18 (9 lanes × 2 endpoints)
+| Issue             | Solution                                                             |
+| ----------------- | -------------------------------------------------------------------- |
+| "FCU timeout"     | Ensure Terminal 2 (MAVROS) is running with `FCU: ArduCopter` message |
+| "No waypoints"    | Restart Terminal 3 (KML planner) after Terminal 4 is running         |
+| "Takeoff timeout" | Wait 30s after SITL starts before running navigation node            |
+| Drone not moving  | Check MAVROS topics exist: `ros2 topic list \| grep mavros`          |
 
 ---
 

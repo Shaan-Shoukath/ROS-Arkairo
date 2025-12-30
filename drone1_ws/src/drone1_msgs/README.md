@@ -18,10 +18,10 @@ Array of lane segments for complete mission planning.
 
 ## Build
 
-```bash
+```zsh
 cd ~/drone1_ws
 colcon build --packages-select drone1_msgs
-source install/setup.bash
+source install/setup.zsh
 ```
 
 ## Usage

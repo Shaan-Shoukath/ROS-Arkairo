@@ -6,7 +6,7 @@
 Drone-2 Sprayer System Launch File
 
 Launches all nodes for the sprayer drone:
-- GCS to D2 Downlink
+- Telemetry RX (receives and dispatches geotags)
 - Navigation
 - Local Detection
 - Centering Controller
@@ -29,15 +29,12 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('log_level', default_value='info'),
         
-        # GCS Downlink
+        # Telemetry RX (receives geotags from Drone-1, validates, and dispatches)
         Node(
-            package='gcs_to_d2_downlink',
-            executable='gcs_to_d2_downlink_node',
-            name='gcs_to_d2_downlink_node',
+            package='telem_rx',
+            executable='telem_rx_node',
+            name='telem_rx_node',
             output='screen',
-            parameters=[PathJoinSubstitution([
-                FindPackageShare('gcs_to_d2_downlink'), 'config', 'downlink_params.yaml'
-            ])],
             arguments=['--ros-args', '--log-level', log_level]
         ),
         

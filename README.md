@@ -6,7 +6,7 @@ A production-grade ROS 2 dual-drone system for **fully autonomous** field survey
 
 ![ROS2](https://img.shields.io/badge/ROS2-Jazzy-blue)
 ![License](https://img.shields.io/badge/License-Apache%202.0-green)
-![Packages](https://img.shields.io/badge/Drone1-8-orange)
+![Packages](https://img.shields.io/badge/Drone1-7-orange)
 ![Packages](https://img.shields.io/badge/Drone2-6-orange)
 ![Autonomous](https://img.shields.io/badge/Mode-Fully%20Autonomous-brightgreen)
 
@@ -59,11 +59,10 @@ Drone-1                                              Drone-2
 
 | Workspace   | Packages | Description                                                                             |
 | ----------- | -------- | --------------------------------------------------------------------------------------- |
-| `drone1_ws` | 8        | Survey drone - KML planning, navigation, detection, telemetry TX                        |
+| `drone1_ws` | 7        | Survey drone - KML planning, navigation, detection, telemetry TX                        |
 | `drone2_ws` | 6        | Sprayer drone - **unified navigation** ⚡, **merged detection+centering** ⚡, spray control |
-| `gcs_ws`    | 4        | Ground Control Station - _optional monitoring only_                                     |
 
-> **Note**: GCS is now optional - drones communicate directly via telemetry.  
+> **Note**: Direct drone-to-drone telemetry communication (no GCS required).  
 > ⚡ **Optimized**: Drone-2 uses merged nodes for lower latency and simplified architecture.
 
 ---
@@ -97,7 +96,6 @@ Each document includes:
 | **Image Capture**        | USB camera interface for survey          | [📄 Package](drone1_ws/src/image_capture/)             | [📖 Developer Guide](drone1_ws/developers_debug/03_IMAGE_CAPTURE_NODE.md)     |
 | **Detection & Geotag**   | Disease detection with GPS ray-casting   | [📄 Package](drone1_ws/src/detection_and_geotag/)      | [📖 Developer Guide](drone1_ws/developers_debug/04_DETECTION_AND_GEOTAG_NODE.md) |
 | **Telemetry TX** _(NEW)_ | Transmits geotags over MAVLink telemetry | [📄 Package](drone1_ws/src/telem_tx/)                  | [📖 Developer Guide](drone1_ws/developers_debug/05_TELEM_TX_NODE.md)          |
-| **D1→GCS Uplink**        | Optional GCS monitoring                  | [📄 Package](drone1_ws/src/d1_to_gcs_uplink/)          | _(Monitor only)_                                                            |
 
 ### Drone-2 (Sprayer System) - 4 Nodes
 
@@ -109,13 +107,6 @@ Each document includes:
 | **Sprayer Control**                  | PWM actuation with safety checks          | [📄 Package](drone2_ws/src/sprayer_control/)        | [📖 Developer Guide](drone2_ws/developers_debug/04_SPRAYER_CONTROL_NODE.md)       |
 
 > ⚡ **Architecture Note**: `mission_manager` was removed - functionality merged into `drone2_navigation` for simpler unified control
-
-### Ground Control Station _(Optional)_
-
-| Node                | Description                            | Documentation                                         |
-| ------------------- | -------------------------------------- | ----------------------------------------------------- |
-| **Target Receiver** | Validates and filters incoming targets | [📄 README](gcs_ws/src/gcs_target_receiver/README.md) |
-| **Mission Router**  | Dispatches missions (legacy mode)      | [📄 README](gcs_ws/src/gcs_mission_router/README.md)  |
 
 ---
 
@@ -279,11 +270,6 @@ source install/setup.zsh
 cd ~/Documents/ROSArkairo/drone2_ws
 colcon build --symlink-install
 source install/setup.zsh
-
-# GCS (optional - for monitoring only)
-cd ~/Documents/ROSArkairo/gcs_ws
-colcon build --symlink-install
-source install/setup.zsh
 ```
 
 ### Launch Systems (Direct Telemetry Mode)
@@ -359,15 +345,15 @@ cp field_boundary.kml ~/Documents/ROSArkairo/drone1_ws/missions/
 
 | Workspace | Message Pkgs | Node Pkgs | Launch Pkgs | **Total** |
 | --------- | ------------ | --------- | ----------- | --------- |
-| drone1_ws | 1            | 6         | 1           | **8**     |
+| drone1_ws | 1            | 5         | 1           | **7**     |
 | drone2_ws | 1            | 3         | 1           | **6**     |
-| gcs_ws    | 1            | 2         | 1           | **4**     |
-| **Total** | **3**        | **11**    | **3**       | **17**    |
+| **Total** | **2**        | **8**     | **2**       | **13**    |
 
 **Architecture Optimization**:
 - ✅ **Drone-2**: Reduced from 9→6 packages (removed mission_manager, local_detection, centering_controller)
 - ⚡ **Latency**: 50% reduction with merged detection+centering
 - 🎯 **Simplicity**: Unified navigation replaces 2-node state coordination
+- 👍 **No GCS**: Direct drone-to-drone telemetry eliminates ground station dependency
 
 ---
 

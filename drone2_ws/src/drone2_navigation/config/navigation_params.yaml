@@ -37,7 +37,7 @@
     # Time to wait for next geotag after arriving at target
     # If exceeded, drone RTLs (but can resume if new geotag received)
     # SITL testing: 10s | Real deployment: 30-60s recommended
-    wait_timeout_sec: 10.0
+    wait_timeout_sec: 15.0
 
     # Maximum time to wait for takeoff completion
     # If drone doesn't reach 80% of takeoff_altitude within this time, RTL triggered

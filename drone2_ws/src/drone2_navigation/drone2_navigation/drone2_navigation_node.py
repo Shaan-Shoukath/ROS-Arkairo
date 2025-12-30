@@ -635,29 +635,48 @@ class Drone2NavigationNode(Node):
     def handle_wait_for_next(self):
         """Wait at current position for next target, then RTL if timeout."""
         time_in = self.time_in_state()
-        time_remaining = self.wait_timeout - time_in
+        time_remaining = max(0, self.wait_timeout - time_in)
         
-        # Show countdown every 2 seconds (at 0.5, 2.5, 4.5, 6.5, 8.5...)
-        if int(time_in + 0.5) % 2 == 1 and time_in < self.wait_timeout:
+        # Log countdown every second
+        elapsed_seconds = int(time_in)
+        if elapsed_seconds != getattr(self, '_last_wait_log_second', -1):
+            self._last_wait_log_second = elapsed_seconds
             self.get_logger().info(
-                f'Hovering at waypoint - waiting for next geotag... '
-                f'{max(0, int(time_remaining))}s remaining before RTL'
+                f'[WAIT_FOR_NEXT] Hovering at waypoint... '
+                f'{int(time_remaining)}s until RTL'
             )
         
         # Timeout reached - initiate RTL
         if time_in >= self.wait_timeout:
-            self.get_logger().info(f'{self.wait_timeout}s timeout - RTL (resumable if new geotag)')
+            self.get_logger().info(f'{self.wait_timeout}s timeout reached - initiating RTL')
             self.rtl_due_to_timeout = True  # Mark as resumable
+            self._last_wait_log_second = -1  # Reset for next wait period
             self.transition_to(FlightState.RTL, 'Wait timeout')
     
     def handle_rtl(self):
-        """Request RTL mode."""
-        if self.time_in_state() < 0.1:
-            if self.mode_client.wait_for_service(timeout_sec=0.5):
-                req = SetMode.Request()
-                req.custom_mode = 'RTL'
-                self.mode_client.call_async(req)
-                self.get_logger().info('RTL requested')
+        """Request RTL mode and monitor landing."""
+        if not self.fcu_state:
+            return
+        
+        # Request RTL mode if not already in it
+        if self.fcu_state.mode != 'RTL':
+            # Request every 2 seconds until confirmed
+            if int(self.time_in_state()) % 2 == 0:
+                if self.mode_client.wait_for_service(timeout_sec=0.5):
+                    req = SetMode.Request()
+                    req.custom_mode = 'RTL'
+                    self.mode_client.call_async(req)
+                    self.get_logger().info(f'RTL mode requested (current: {self.fcu_state.mode})')
+        else:
+            # Log RTL progress every 3 seconds
+            if int(self.time_in_state()) % 3 == 0:
+                alt = self.relative_altitude if self.relative_altitude else 0.0
+                self.get_logger().info(f'[RTL] Returning home... altitude: {alt:.1f}m')
+        
+        # Check if landed (disarmed while in RTL)
+        if self.fcu_state.mode == 'RTL' and not self.fcu_state.armed:
+            self.get_logger().info('RTL complete - landed and disarmed')
+            self.transition_to(FlightState.LANDED, 'RTL complete')
     
     # ====================================================================
     # SETPOINT PUBLISHING (10Hz)

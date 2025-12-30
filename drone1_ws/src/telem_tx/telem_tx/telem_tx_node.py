@@ -11,7 +11,7 @@ Subscribers:
     /drone1/disease_geotag (geographic_msgs/GeoPointStamped): Disease detections
 
 Publishers:
-    /mavros/named_value_float/send (mavros_msgs/NamedValueFloat): MAVLink transport
+    /mavros/debug_value/send (mavros_msgs/DebugValue): MAVLink transport
 
 Encoding:
     d_lat -> latitude
@@ -24,7 +24,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 from geographic_msgs.msg import GeoPointStamped
-from mavros_msgs.msg import NamedValueFloat
+from mavros_msgs.msg import DebugValue
 
 
 class TelemTxNode(Node):
@@ -36,10 +36,10 @@ class TelemTxNode(Node):
         # Statistics
         self.tx_count = 0
         
-        # QoS profiles
-        reliable_qos = QoSProfile(
+        # QoS profiles - using VOLATILE for compatibility with ros2 topic pub
+        sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            durability=DurabilityPolicy.VOLATILE,
             depth=10
         )
         
@@ -48,19 +48,19 @@ class TelemTxNode(Node):
             GeoPointStamped,
             '/drone1/disease_geotag',
             self.geotag_callback,
-            reliable_qos
+            sensor_qos
         )
         
-        # Publisher: MAVLink named value float (to MAVROS)
+        # Publisher: MAVLink debug value (to MAVROS)
         self.mavlink_pub = self.create_publisher(
-            NamedValueFloat,
-            '/mavros/named_value_float/send',
+            DebugValue,
+            '/mavros/debug_value/send',
             10
         )
         
         self.get_logger().info('Telemetry TX Node initialized')
         self.get_logger().info('  Listening: /drone1/disease_geotag')
-        self.get_logger().info('  Publishing: /mavros/named_value_float/send')
+        self.get_logger().info('  Publishing: /mavros/debug_value/send')
     
     def geotag_callback(self, msg: GeoPointStamped):
         """Convert geotag to MAVLink messages and transmit."""
@@ -68,28 +68,40 @@ class TelemTxNode(Node):
         lon = msg.position.longitude
         alt = msg.position.altitude
         
-        # Get timestamp for synchronization
-        time_boot_ms = int(self.get_clock().now().nanoseconds / 1_000_000) & 0xFFFFFFFF
+        # Get current timestamp
+        now = self.get_clock().now().to_msg()
         
         # Send latitude
-        lat_msg = NamedValueFloat()
-        lat_msg.time_boot_ms = time_boot_ms
+        lat_msg = DebugValue()
+        lat_msg.header.stamp = now
+        lat_msg.header.frame_id = 'map'
+        lat_msg.index = -1
+        lat_msg.array_id = -1
         lat_msg.name = 'd_lat'
-        lat_msg.value = float(lat)
+        lat_msg.value_float = float(lat)
+        lat_msg.type = DebugValue.TYPE_NAMED_VALUE_FLOAT
         self.mavlink_pub.publish(lat_msg)
         
         # Send longitude
-        lon_msg = NamedValueFloat()
-        lon_msg.time_boot_ms = time_boot_ms
+        lon_msg = DebugValue()
+        lon_msg.header.stamp = now
+        lon_msg.header.frame_id = 'map'
+        lon_msg.index = -1
+        lon_msg.array_id = -1
         lon_msg.name = 'd_lon'
-        lon_msg.value = float(lon)
+        lon_msg.value_float = float(lon)
+        lon_msg.type = DebugValue.TYPE_NAMED_VALUE_FLOAT
         self.mavlink_pub.publish(lon_msg)
         
         # Send altitude
-        alt_msg = NamedValueFloat()
-        alt_msg.time_boot_ms = time_boot_ms
+        alt_msg = DebugValue()
+        alt_msg.header.stamp = now
+        alt_msg.header.frame_id = 'map'
+        alt_msg.index = -1
+        alt_msg.array_id = -1
         alt_msg.name = 'd_alt'
-        alt_msg.value = float(alt)
+        alt_msg.value_float = float(alt)
+        alt_msg.type = DebugValue.TYPE_NAMED_VALUE_FLOAT
         self.mavlink_pub.publish(alt_msg)
         
         self.tx_count += 1

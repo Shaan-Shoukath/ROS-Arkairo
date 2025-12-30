@@ -43,11 +43,11 @@ Drone-1                                              Drone-2
 │ geotag_node         │                    │   ↓                 │
 │   ↓                 │                    │ gcs_to_d2_downlink  │
 │ /drone1/disease_    │    MAVLink         │   ↓                 │
-│ geotag              │    NAMED_VALUE_    │ /drone2/target_     │
-│   ↓                 │    FLOAT           │ geotag              │
-│ telem_tx_node       │═══════════════════►│   ↓                 │
-│   ↓                 │    (d_lat,d_lon,   │ Navigation→Spray    │
-│ MAVROS              │     d_alt)         │                     │
+│ geotag              │    DEBUG_VALUE     │ /drone2/target_     │
+│   ↓                 │    (NAMED_VALUE_   │ position            │
+│ telem_tx_node       │═══════════════════►│ FLOAT type)         │
+│   ↓                 │    (d_lat,d_lon,   │   ↓                 │
+│ MAVROS              │     d_alt)         │ Navigation→Spray    │
 └─────────────────────┘                    └─────────────────────┘
 ```
 
@@ -147,16 +147,16 @@ Processes camera frames to detect crop disease (yellow spots) and compute GPS co
 
 ---
 
-#### 📡 Telemetry TX Node _(NEW)_
+#### 📡 Telemetry TX Node
 
 Transmits disease geotags directly to Drone-2 over MAVLink telemetry (SiK radio):
 
 - Subscribes to `/drone1/disease_geotag`
-- Encodes GPS coordinates as NAMED_VALUE_FLOAT messages:
+- Encodes GPS coordinates as `DebugValue` messages (TYPE_NAMED_VALUE_FLOAT):
   - `d_lat` → latitude
   - `d_lon` → longitude
   - `d_alt` → altitude
-- Publishes to `/mavros/named_value_float/send`
+- Publishes to `/mavros/debug_value/send`
 - MAVROS forwards to autopilot, which transmits over telemetry
 
 **Key Features**: No GCS dependency, direct drone-to-drone communication, preserves all detection data
@@ -165,16 +165,16 @@ Transmits disease geotags directly to Drone-2 over MAVLink telemetry (SiK radio)
 
 ### Drone-2 (Sprayer System)
 
-#### 📡 Telemetry RX Node _(NEW)_
+#### 📡 Telemetry RX Node
 
-Receives disease geotags from Drone-1 via MAVLink telemetry:
+Receives disease geotags from Drone-1 via MAVLink telemetry and dispatches to navigation:
 
-- Subscribes to `/mavros/named_value_float`
+- Subscribes to `/mavros/debug_value/recv`
 - Buffers incoming `d_lat`, `d_lon`, `d_alt` fields
-- Reconstructs complete `GeoPointStamped` when all 3 fields received
-- Publishes to `/drone2/target_geotag`
+- Validates coordinates and dispatches to navigation
+- Publishes to `/drone2/target_position` and `/drone2/new_target_received`
 
-**Key Features**: Message buffering with timeout, automatic buffer clearing, seamless integration with existing nodes
+**Key Features**: Coordinate validation, configurable altitude, message buffering with timeout
 
 ---
 
@@ -280,12 +280,12 @@ cp field_boundary.kml ~/Documents/ROSArkairo/drone1_ws/missions/
 
 ### Drone-1 → Drone-2 (Direct Telemetry)
 
-| Topic                            | Direction | Type            | Description           |
-| -------------------------------- | --------- | --------------- | --------------------- |
-| `/drone1/disease_geotag`         | D1 Local  | GeoPointStamped | Detected disease      |
-| `/mavros/named_value_float/send` | D1→Telem  | NamedValueFloat | MAVLink transport     |
-| `/mavros/named_value_float`      | Telem→D2  | NamedValueFloat | Received from Drone-1 |
-| `/drone2/target_geotag`          | D2 Local  | GeoPointStamped | Reconstructed target  |
+| Topic                      | Direction | Type            | Description           |
+| -------------------------- | --------- | --------------- | --------------------- |
+| `/drone1/disease_geotag`   | D1 Local  | GeoPointStamped | Detected disease      |
+| `/mavros/debug_value/send` | D1→Telem  | DebugValue      | MAVLink transport     |
+| `/mavros/debug_value/recv` | Telem→D2  | DebugValue      | Received from Drone-1 |
+| `/drone2/target_position`  | D2 Local  | NavSatFix       | Navigation target     |
 
 ### Drone-2 Internal
 
@@ -305,7 +305,7 @@ cp field_boundary.kml ~/Documents/ROSArkairo/drone1_ws/missions/
 | **Ray-Casting GPS**    | Detection Node       | Pixel to GPS using camera intrinsics + IMU |
 | **PID Control**        | Centering Controller | Visual servoing for target alignment       |
 | **Haversine Distance** | All navigation       | GPS distance calculation                   |
-| **MAVLink Encoding**   | Telemetry TX/RX      | GPS to NAMED_VALUE_FLOAT conversion        |
+| **MAVLink Encoding**   | Telemetry TX/RX      | GPS to DEBUG_VALUE (NAMED_VALUE_FLOAT)     |
 
 ---
 

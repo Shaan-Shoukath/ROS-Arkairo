@@ -9,7 +9,7 @@ Receives disease geotags from MAVLink telemetry, validates them, and dispatches
 to the navigation system for Drone-2.
 
 Subscribers:
-    /mavros/named_value_float (mavros_msgs/NamedValueFloat): MAVLink transport
+    /mavros/debug_value/recv (mavros_msgs/DebugValue): MAVLink transport
 
 Publishers:
     /drone2/target_position (sensor_msgs/NavSatFix): Navigation target
@@ -29,7 +29,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 from geographic_msgs.msg import GeoPoint
-from mavros_msgs.msg import NamedValueFloat
+from mavros_msgs.msg import DebugValue
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Header, Bool
 
@@ -53,8 +53,8 @@ class TelemRxNode(Node):
         self.declare_parameter('home_longitude', 0.0)
         
         # Altitude override parameters
-        self.declare_parameter('override_altitude', True)
-        self.declare_parameter('target_altitude_m', 10.0)
+        self.declare_parameter('override_altitude', False)
+        self.declare_parameter('target_altitude_m', 20.0)
         
         # Get parameters
         self.validate_coords = self.get_parameter('validate_coordinates').value
@@ -68,7 +68,7 @@ class TelemRxNode(Node):
         self.buffer_lat: Optional[float] = None
         self.buffer_lon: Optional[float] = None
         self.buffer_alt: Optional[float] = None
-        self.buffer_time_boot_ms: Optional[int] = None
+        self.buffer_stamp: Optional[float] = None
         self.last_buffer_time: Optional[float] = None
         
         # Statistics
@@ -83,10 +83,10 @@ class TelemRxNode(Node):
             depth=10
         )
         
-        # Subscriber: MAVLink named value float (from MAVROS)
+        # Subscriber: MAVLink debug value (from MAVROS)
         self.mavlink_sub = self.create_subscription(
-            NamedValueFloat,
-            '/mavros/named_value_float',
+            DebugValue,
+            '/mavros/debug_value/recv',
             self.mavlink_callback,
             10
         )
@@ -108,12 +108,16 @@ class TelemRxNode(Node):
         self.timeout_timer = self.create_timer(1.0, self.check_buffer_timeout)
         
         self.get_logger().info('Telemetry RX Node initialized')
-        self.get_logger().info('  Listening: /mavros/named_value_float')
+        self.get_logger().info('  Listening: /mavros/debug_value/recv')
         self.get_logger().info('  Publishing: /drone2/target_position')
         self.get_logger().info(f'  Override altitude: {self.override_alt} ({self.target_alt}m)')
     
-    def mavlink_callback(self, msg: NamedValueFloat):
+    def mavlink_callback(self, msg: DebugValue):
         """Buffer incoming MAVLink messages and reconstruct geotag."""
+        # Only process NAMED_VALUE_FLOAT type messages
+        if msg.type != DebugValue.TYPE_NAMED_VALUE_FLOAT:
+            return
+        
         name = msg.name.strip()
         
         # Only process disease geotag messages
@@ -121,22 +125,23 @@ class TelemRxNode(Node):
             return
         
         current_time = self.get_clock().now().nanoseconds / 1e9
+        msg_stamp = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9
         
-        # Check for new message group (different time_boot_ms = new geotag)
-        if self.buffer_time_boot_ms is not None and msg.time_boot_ms != self.buffer_time_boot_ms:
+        # Check for new message group (different timestamp = new geotag)
+        if self.buffer_stamp is not None and abs(msg_stamp - self.buffer_stamp) > 0.1:
             # New message group, clear old buffer
             self._clear_buffer()
         
-        self.buffer_time_boot_ms = msg.time_boot_ms
+        self.buffer_stamp = msg_stamp
         self.last_buffer_time = current_time
         
         # Store value in buffer
         if name == 'd_lat':
-            self.buffer_lat = msg.value
+            self.buffer_lat = msg.value_float
         elif name == 'd_lon':
-            self.buffer_lon = msg.value
+            self.buffer_lon = msg.value_float
         elif name == 'd_alt':
-            self.buffer_alt = msg.value
+            self.buffer_alt = msg.value_float
         
         # Check if complete
         if self._buffer_complete():
@@ -255,7 +260,7 @@ class TelemRxNode(Node):
         self.buffer_lat = None
         self.buffer_lon = None
         self.buffer_alt = None
-        self.buffer_time_boot_ms = None
+        self.buffer_stamp = None
     
     def check_buffer_timeout(self):
         """Clear buffer if messages stall."""

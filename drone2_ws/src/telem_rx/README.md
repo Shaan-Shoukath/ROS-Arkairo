@@ -1,10 +1,10 @@
 # Telemetry RX Node
 
-**Direct Drone-to-Drone Geotag Reception**
+**Direct Drone-to-Drone Geotag Reception & Dispatch**
 
 ## What It Does
 
-Receives disease geotags from Drone-1 via MAVLink telemetry (SiK radio) and reconstructs them for local processing, bypassing the Ground Control Station entirely.
+Receives disease geotags from Drone-1 via MAVLink telemetry (SiK radio), validates them, and dispatches to the navigation system. This node combines telemetry reception with the validation/dispatch logic, bypassing the GCS entirely.
 
 ## Logic Flow
 
@@ -12,7 +12,7 @@ Receives disease geotags from Drone-1 via MAVLink telemetry (SiK radio) and reco
 MAVLink messages from Telemetry Radio
         │
         ▼
-Filter for d_lat, d_lon, d_alt
+Filter for d_lat, d_lon, d_alt (TYPE_NAMED_VALUE_FLOAT)
         │
         ▼
 Buffer incoming values:
@@ -21,36 +21,43 @@ Buffer incoming values:
 └── Store d_alt
         │
         ▼ [all 3 present]
-Reconstruct GeoPointStamped
+Validate coordinates
         │
         ▼
-Publish to /drone2/target_geotag
+Dispatch to /drone2/target_position
         │
         ▼
-Clear buffer
+Trigger /drone2/new_target_received
 ```
 
 ## Subscribers
 
-| Topic                       | Type              | Callback             | Description    |
-| --------------------------- | ----------------- | -------------------- | -------------- |
-| `/mavros/named_value_float` | `NamedValueFloat` | `mavlink_callback()` | From telemetry |
+| Topic                      | Type         | Callback             | Description    |
+| -------------------------- | ------------ | -------------------- | -------------- |
+| `/mavros/debug_value/recv` | `DebugValue` | `mavlink_callback()` | From telemetry |
 
 ## Publishers
 
-| Topic                   | Type              | Description       |
-| ----------------------- | ----------------- | ----------------- |
-| `/drone2/target_geotag` | `GeoPointStamped` | Reconstructed GPS |
+| Topic                         | Type        | Description       |
+| ----------------------------- | ----------- | ----------------- |
+| `/drone2/target_position`     | `NavSatFix` | Navigation target |
+| `/drone2/new_target_received` | `Bool`      | Mission trigger   |
 
 ## Parameters
 
-| Parameter            | Default | Description                          |
-| -------------------- | ------- | ------------------------------------ |
-| `buffer_timeout_sec` | `5.0`   | Max time to wait for complete geotag |
+| Parameter                  | Default   | Description                          |
+| -------------------------- | --------- | ------------------------------------ |
+| `buffer_timeout_sec`       | `5.0`     | Max time to wait for complete geotag |
+| `validate_coordinates`     | `true`    | Enable coordinate validation         |
+| `max_distance_from_home_m` | `10000.0` | Max distance from home (meters)      |
+| `home_latitude`            | `0.0`     | Home position latitude               |
+| `home_longitude`           | `0.0`     | Home position longitude              |
+| `override_altitude`        | `false`   | Override received altitude           |
+| `target_altitude_m`        | `20.0`    | Target altitude if override enabled  |
 
 ## MAVLink Decoding
 
-Buffers 3 NAMED_VALUE_FLOAT messages to reconstruct a complete geotag:
+Buffers 3 `DebugValue` messages with `TYPE_NAMED_VALUE_FLOAT` to reconstruct a complete geotag:
 
 | Name    | Value     | Description   |
 | ------- | --------- | ------------- |
@@ -58,58 +65,56 @@ Buffers 3 NAMED_VALUE_FLOAT messages to reconstruct a complete geotag:
 | `d_lon` | longitude | WGS84 degrees |
 | `d_alt` | altitude  | Meters        |
 
-Messages are grouped by `time_boot_ms` for synchronization.
+Messages are grouped by header timestamp for synchronization.
 
 ## Key Functions
 
-### `mavlink_callback(msg: NamedValueFloat)`
+### `mavlink_callback(msg: DebugValue)`
 
 Buffers and reconstructs geotags.
 
 ```python
 def mavlink_callback(self, msg):
+    # Only process NAMED_VALUE_FLOAT type
+    if msg.type != DebugValue.TYPE_NAMED_VALUE_FLOAT:
+        return
+
     name = msg.name.strip()
 
     # Only process disease geotag messages
     if name not in ('d_lat', 'd_lon', 'd_alt'):
         return
 
-    # Check for new message group
-    if self.buffer_time_boot_ms != msg.time_boot_ms:
-        self._clear_buffer()
-
-    self.buffer_time_boot_ms = msg.time_boot_ms
-
     # Store value in buffer
     if name == 'd_lat':
-        self.buffer_lat = msg.value
+        self.buffer_lat = msg.value_float
     elif name == 'd_lon':
-        self.buffer_lon = msg.value
+        self.buffer_lon = msg.value_float
     elif name == 'd_alt':
-        self.buffer_alt = msg.value
+        self.buffer_alt = msg.value_float
 
-    # Publish when complete
+    # Dispatch when complete
     if self._buffer_complete():
-        self._publish_geotag()
+        self._process_geotag()
         self._clear_buffer()
 ```
 
-### `_publish_geotag()`
+### `_dispatch_target(lat, lon, alt)`
 
-Reconstructs and publishes the geotag.
+Validates and dispatches to navigation system.
 
 ```python
-def _publish_geotag(self):
-    msg = GeoPointStamped()
+def _dispatch_target(self, lat, lon, alt):
+    msg = NavSatFix()
     msg.header.stamp = self.get_clock().now().to_msg()
-    msg.header.frame_id = 'map'
+    msg.latitude = lat
+    msg.longitude = lon
+    msg.altitude = alt if not self.override_alt else self.target_alt
 
-    msg.position.latitude = self.buffer_lat
-    msg.position.longitude = self.buffer_lon
-    msg.position.altitude = self.buffer_alt
+    self.position_pub.publish(msg)
 
-    self.geotag_pub.publish(msg)
-    self.rx_count += 1
+    # Send navigation trigger
+    self.trigger_pub.publish(Bool(data=True))
 ```
 
 ## Debugging
@@ -118,13 +123,22 @@ def _publish_geotag(self):
 
 ```zsh
 # Incoming MAVLink messages
-ros2 topic echo /mavros/named_value_float
+ros2 topic echo /mavros/debug_value/recv
 
-# Reconstructed geotags
-ros2 topic echo /drone2/target_geotag
+# Dispatched targets
+ros2 topic echo /drone2/target_position
 
 # Check reception rate
-ros2 topic hz /drone2/target_geotag
+ros2 topic hz /drone2/target_position
+```
+
+### Testing Without Hardware
+
+For software-only testing, remap RX to listen to TX's topic:
+
+```zsh
+ros2 run telem_rx telem_rx_node --ros-args \
+  --remap /mavros/debug_value/recv:=/mavros/debug_value/send
 ```
 
 ### Common Issues
@@ -134,7 +148,8 @@ ros2 topic hz /drone2/target_geotag
 | No output          | No incoming MAVLink  | Check telemetry link          |
 | Incomplete geotags | Message loss         | Check buffer timeout logs     |
 | Buffer timeouts    | Telemetry congestion | Increase `buffer_timeout_sec` |
+| Rejected targets   | Validation failure   | Check coordinate validity     |
 
 ## Integration
 
-This node outputs to `/drone2/target_geotag`, which is the same topic the existing `gcs_to_d2_downlink` node subscribes to. No changes to downstream nodes required.
+This node outputs to `/drone2/target_position` and `/drone2/new_target_received`, which the navigation and mission manager nodes subscribe to. It combines the functionality of the old `telem_rx` and `gcs_to_d2_downlink` nodes.

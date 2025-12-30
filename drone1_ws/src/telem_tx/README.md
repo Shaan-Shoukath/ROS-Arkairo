@@ -12,13 +12,13 @@ Transmits disease geotags from Drone-1 directly to Drone-2 over MAVLink telemetr
 Disease Geotag from Detection Node
         │
         ▼
-Encode as NAMED_VALUE_FLOAT:
+Encode as DEBUG_VALUE (TYPE_NAMED_VALUE_FLOAT):
 ├── d_lat → latitude
 ├── d_lon → longitude
 └── d_alt → altitude
         │
         ▼
-Publish to /mavros/named_value_float/send
+Publish to /mavros/debug_value/send
         │
         ▼
 MAVROS → Autopilot → Telemetry Radio
@@ -35,13 +35,13 @@ Drone-2 receives via telemetry
 
 ## Publishers
 
-| Topic                            | Type              | Description       |
-| -------------------------------- | ----------------- | ----------------- |
-| `/mavros/named_value_float/send` | `NamedValueFloat` | MAVLink transport |
+| Topic                      | Type         | Description       |
+| -------------------------- | ------------ | ----------------- |
+| `/mavros/debug_value/send` | `DebugValue` | MAVLink transport |
 
 ## MAVLink Encoding
 
-Each geotag is encoded as 3 sequential NAMED_VALUE_FLOAT messages:
+Each geotag is encoded as 3 sequential `DebugValue` messages with `TYPE_NAMED_VALUE_FLOAT`:
 
 | Name    | Value     | Description   |
 | ------- | --------- | ------------- |
@@ -49,7 +49,7 @@ Each geotag is encoded as 3 sequential NAMED_VALUE_FLOAT messages:
 | `d_lon` | longitude | WGS84 degrees |
 | `d_alt` | altitude  | Meters        |
 
-All 3 messages share the same `time_boot_ms` for synchronization on the receiver.
+All 3 messages share the same header timestamp for synchronization on the receiver.
 
 ## Key Functions
 
@@ -63,29 +63,20 @@ def geotag_callback(self, msg):
     lon = msg.position.longitude
     alt = msg.position.altitude
 
-    time_boot_ms = int(self.get_clock().now().nanoseconds / 1_000_000)
+    now = self.get_clock().now().to_msg()
 
     # Send latitude
-    lat_msg = NamedValueFloat()
-    lat_msg.time_boot_ms = time_boot_ms
+    lat_msg = DebugValue()
+    lat_msg.header.stamp = now
+    lat_msg.header.frame_id = 'map'
+    lat_msg.index = -1
+    lat_msg.array_id = -1
     lat_msg.name = 'd_lat'
-    lat_msg.value = float(lat)
+    lat_msg.value_float = float(lat)
+    lat_msg.type = DebugValue.TYPE_NAMED_VALUE_FLOAT
     self.mavlink_pub.publish(lat_msg)
 
-    # Send longitude
-    lon_msg = NamedValueFloat()
-    lon_msg.time_boot_ms = time_boot_ms
-    lon_msg.name = 'd_lon'
-    lon_msg.value = float(lon)
-    self.mavlink_pub.publish(lon_msg)
-
-    # Send altitude
-    alt_msg = NamedValueFloat()
-    alt_msg.time_boot_ms = time_boot_ms
-    alt_msg.name = 'd_alt'
-    alt_msg.value = float(alt)
-    self.mavlink_pub.publish(alt_msg)
-
+    # Send longitude and altitude similarly...
     self.tx_count += 1
 ```
 
@@ -95,13 +86,13 @@ def geotag_callback(self, msg):
 
 ```zsh
 # Outgoing MAVLink messages
-ros2 topic echo /mavros/named_value_float/send
+ros2 topic echo /mavros/debug_value/send
 
 # Input geotags
 ros2 topic echo /drone1/disease_geotag
 
 # Check transmission rate
-ros2 topic hz /mavros/named_value_float/send
+ros2 topic hz /mavros/debug_value/send
 ```
 
 ### Common Issues

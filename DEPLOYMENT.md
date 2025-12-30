@@ -94,12 +94,9 @@ These contain launch files that start all nodes for each system:
 **`drone2_bringup` → `drone2_sprayer.launch.py`** launches:
 
 - `telem_rx_node` - Receives geotags from Drone-1 telemetry
-- `gcs_to_d2_downlink_node` - Target validation and dispatch
-- `drone2_navigation_node` - Target navigation
-- `local_detection_node` - Local disease confirmation
-- `centering_controller_node` - PID visual servoing
-- `sprayer_control_node` - Spray actuation
-- `mission_manager_node` - State machine and reporting
+- `drone2_navigation_node` - Unified autonomous controller (ARM/TAKEOFF/NAV)
+- `detection_centering_node` - Combined detection and visual servoing
+- `sprayer_control_node` - Spray actuation with safety checks
 
 ---
 

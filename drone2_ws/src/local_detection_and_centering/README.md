@@ -28,59 +28,61 @@ IDLE → DETECTING → CENTERING → COMPLETED → IDLE
 
 ## Subscriptions
 
-| Topic | Type | Purpose |
-|-------|------|---------|
-| `/drone2/arrival_status` | `std_msgs/Bool` | Trigger to start detection |
-| `/camera/image_raw` | `sensor_msgs/Image` | Camera feed for detection & centering |
-| `/mavros/local_position/pose` | `geometry_msgs/PoseStamped` | Current drone pose |
+| Topic                         | Type                        | Purpose                               |
+| ----------------------------- | --------------------------- | ------------------------------------- |
+| `/drone2/arrival_status`      | `std_msgs/Bool`             | Trigger to start detection            |
+| `/camera/image_raw`           | `sensor_msgs/Image`         | Camera feed for detection & centering |
+| `/mavros/local_position/pose` | `geometry_msgs/PoseStamped` | Current drone pose                    |
 
 ## Publications
 
-| Topic | Type | Purpose |
-|-------|------|---------|
-| `/mavros/setpoint_velocity/cmd_vel` | `geometry_msgs/TwistStamped` | Velocity commands for centering |
-| `/drone2/spray_ready` | `std_msgs/Bool` | Signal when centered and ready to spray |
-| `/drone2/detection_status` | `std_msgs/Bool` | Detection result (for logging) |
+| Topic                               | Type                         | Purpose                                 |
+| ----------------------------------- | ---------------------------- | --------------------------------------- |
+| `/mavros/setpoint_velocity/cmd_vel` | `geometry_msgs/TwistStamped` | Velocity commands for centering         |
+| `/drone2/spray_ready`               | `std_msgs/Bool`              | Signal when centered and ready to spray |
+| `/drone2/detection_status`          | `std_msgs/Bool`              | Detection result (for logging)          |
 
 ## Parameters
 
 ### Detection Parameters
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `confidence_threshold` | float | 0.6 | Minimum detection confidence |
-| `detection_timeout_sec` | float | 30.0 | Max time to find disease |
-| `max_detection_attempts` | int | 5 | Max detection attempts |
-| `require_consecutive_detections` | int | 2 | Consecutive detections required |
-| `min_detection_area_px` | int | 500 | Minimum disease area in pixels |
+| Parameter                        | Type  | Default | Description                     |
+| -------------------------------- | ----- | ------- | ------------------------------- |
+| `confidence_threshold`           | float | 0.6     | Minimum detection confidence    |
+| `detection_timeout_sec`          | float | 30.0    | Max time to find disease        |
+| `max_detection_attempts`         | int   | 5       | Max detection attempts          |
+| `require_consecutive_detections` | int   | 2       | Consecutive detections required |
+| `min_detection_area_px`          | int   | 500     | Minimum disease area in pixels  |
 
 ### Centering Parameters
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `image_width` | int | 1920 | Camera image width |
-| `image_height` | int | 1080 | Camera image height |
-| `centered_threshold_pixels` | int | 30 | Centering tolerance |
-| `max_velocity_mps` | float | 0.5 | Maximum velocity during centering |
-| `centering_timeout_sec` | float | 30.0 | Max time to center |
-| `control_rate_hz` | float | 20.0 | Control loop frequency |
+| Parameter                   | Type  | Default | Description                       |
+| --------------------------- | ----- | ------- | --------------------------------- |
+| `image_width`               | int   | 1920    | Camera image width                |
+| `image_height`              | int   | 1080    | Camera image height               |
+| `centered_threshold_pixels` | int   | 30      | Centering tolerance               |
+| `max_velocity_mps`          | float | 0.5     | Maximum velocity during centering |
+| `centering_timeout_sec`     | float | 30.0    | Max time to center                |
+| `control_rate_hz`           | float | 20.0    | Control loop frequency            |
 
 ### PID Parameters
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `kp` | float | 0.002 | Proportional gain |
-| `ki` | float | 0.0001 | Integral gain |
-| `kd` | float | 0.001 | Derivative gain |
+| Parameter | Type  | Default | Description       |
+| --------- | ----- | ------- | ----------------- |
+| `kp`      | float | 0.002   | Proportional gain |
+| `ki`      | float | 0.0001  | Integral gain     |
+| `kd`      | float | 0.001   | Derivative gain   |
 
 ## Workflow
 
 ### 1. Arrival Trigger
+
 - Receives `/drone2/arrival_status` = `true`
 - Transitions from IDLE → DETECTING
 - Resets detection counters
 
 ### 2. Detection Phase
+
 - Processes camera images
 - Looks for brownish/yellowish disease patches (HSV thresholding)
 - Requires `require_consecutive_detections` consecutive positive detections
@@ -89,6 +91,7 @@ IDLE → DETECTING → CENTERING → COMPLETED → IDLE
 - On failure/timeout: Publishes `false` and returns to IDLE
 
 ### 3. Centering Phase
+
 - Computes centroid of detected bounding box
 - Calculates error from image center
 - Uses PID controller to generate velocity commands
@@ -102,18 +105,21 @@ IDLE → DETECTING → CENTERING → COMPLETED → IDLE
   - Transitions to COMPLETED
 
 ### 4. Completion
+
 - Returns to IDLE state
 - Ready for next target
 
 ## Detection Algorithm
 
 ### HSV Color Thresholding
+
 ```python
 lower = [10, 50, 50]   # Hue: yellow-brown
 upper = [30, 255, 200]  # Saturation and Value ranges
 ```
 
 ### Contour Analysis
+
 1. Find all contours in masked image
 2. Select largest contour by area
 3. Filter by minimum area threshold
@@ -122,18 +128,21 @@ upper = [30, 255, 200]  # Saturation and Value ranges
 ## PID Centering Control
 
 ### Error Calculation
+
 ```python
 error_x = target_x - center_x
 error_y = target_y - center_y
 ```
 
 ### Velocity Computation
+
 ```python
 vel_y = -(kp * error_x + ki * integral_x + kd * deriv_x)
 vel_x = -(kp * error_y + ki * integral_y + kd * deriv_y)
 ```
 
 ### Velocity Clamping
+
 Velocities are clamped to ±`max_velocity_mps`
 
 ## Configuration
@@ -149,18 +158,18 @@ detection_centering_node:
     max_detection_attempts: 5
     require_consecutive_detections: 2
     min_detection_area_px: 500
-    
+
     # Centering
     image_width: 1920
     image_height: 1080
     centered_threshold_pixels: 30
     max_velocity_mps: 0.5
-    
+
     # PID
     kp: 0.002
     ki: 0.0001
     kd: 0.001
-    
+
     # Timing
     centering_timeout_sec: 30.0
     control_rate_hz: 20.0
@@ -169,12 +178,14 @@ detection_centering_node:
 ## Launch
 
 ### Standalone
+
 ```bash
 ros2 run local_detection_and_centering detection_centering_node \
   --ros-args --params-file config/detection_centering_params.yaml
 ```
 
 ### With Full System
+
 ```bash
 ros2 launch drone2_bringup drone2_sprayer.launch.py
 ```
@@ -184,11 +195,13 @@ ros2 launch drone2_bringup drone2_sprayer.launch.py
 ### Detection Tuning
 
 **If detection is too sensitive (false positives):**
+
 - Increase `confidence_threshold`
 - Increase `min_detection_area_px`
 - Increase `require_consecutive_detections`
 
 **If detection misses targets:**
+
 - Decrease `confidence_threshold`
 - Decrease `min_detection_area_px`
 - Adjust HSV thresholds in code
@@ -196,22 +209,26 @@ ros2 launch drone2_bringup drone2_sprayer.launch.py
 ### Centering Tuning
 
 **If centering is unstable/oscillating:**
+
 - Decrease `kp` (proportional gain)
 - Increase `kd` (derivative gain)
 - Decrease `max_velocity_mps`
 
 **If centering is too slow:**
+
 - Increase `kp`
 - Increase `max_velocity_mps`
 - Increase `control_rate_hz`
 
 **If final position is not accurate:**
+
 - Decrease `centered_threshold_pixels`
 - Check camera calibration
 
 ## Monitoring
 
 ### Check Status
+
 ```bash
 # Current detection/centering status
 ros2 topic echo /drone2/detection_status
@@ -224,6 +241,7 @@ ros2 topic echo /mavros/setpoint_velocity/cmd_vel
 ```
 
 ### Node Logs
+
 ```bash
 ros2 node info /detection_centering_node
 ```
@@ -231,6 +249,7 @@ ros2 node info /detection_centering_node
 ## Troubleshooting
 
 ### Detection Timeouts
+
 - **Symptom**: Node always times out in detection phase
 - **Solutions**:
   - Check camera feed: `ros2 topic hz /camera/image_raw`
@@ -239,6 +258,7 @@ ros2 node info /detection_centering_node
   - Lower `require_consecutive_detections`
 
 ### Centering Instability
+
 - **Symptom**: Drone oscillates during centering
 - **Solutions**:
   - Reduce PID gains (especially `kp`)
@@ -247,6 +267,7 @@ ros2 node info /detection_centering_node
   - Check for wind disturbances
 
 ### No Velocity Commands
+
 - **Symptom**: Drone doesn't move during centering
 - **Solutions**:
   - Verify MAVROS connection: `ros2 topic hz /mavros/state`
@@ -254,6 +275,7 @@ ros2 node info /detection_centering_node
   - Verify `max_velocity_mps` > 0
 
 ### Missed Targets
+
 - **Symptom**: Detection fails when target is visible
 - **Solutions**:
   - Tune HSV color ranges
@@ -263,36 +285,40 @@ ros2 node info /detection_centering_node
 ## Migration from Old System
 
 ### Old Architecture (2 Nodes)
+
 ```
 local_detection → /drone2/local_bbox → centering_controller
                 → /drone2/local_detection_status
 ```
 
 ### New Architecture (1 Node)
+
 ```
 detection_centering_node → /drone2/spray_ready
 ```
 
 ### Topic Changes
-| Old Topic | New Topic | Status |
-|-----------|-----------|--------|
-| `/drone2/local_bbox` | _removed_ | Internal state |
+
+| Old Topic                        | New Topic                  | Status           |
+| -------------------------------- | -------------------------- | ---------------- |
+| `/drone2/local_bbox`             | _removed_                  | Internal state   |
 | `/drone2/local_detection_status` | `/drone2/detection_status` | Optional logging |
-| `/drone2/spray_ready` | `/drone2/spray_ready` | ✅ Same |
+| `/drone2/spray_ready`            | `/drone2/spray_ready`      | ✅ Same          |
 
 ### Parameter Migration
+
 - Detection parameters: Same names, same package
 - Centering parameters: Same names, same package
 - **All parameters now in single config file**
 
 ## Performance Improvements
 
-| Metric | Old (2 Nodes) | New (Merged) | Improvement |
-|--------|---------------|--------------|-------------|
-| Detection → Centering Transition | ~100ms | ~5ms | 20x faster |
-| Image Processing Overhead | 2x decode | 1x decode | 50% reduction |
-| Memory Usage | 2 nodes | 1 node | ~40% reduction |
-| Configuration Complexity | 2 files | 1 file | Simplified |
+| Metric                           | Old (2 Nodes) | New (Merged) | Improvement    |
+| -------------------------------- | ------------- | ------------ | -------------- |
+| Detection → Centering Transition | ~100ms        | ~5ms         | 20x faster     |
+| Image Processing Overhead        | 2x decode     | 1x decode    | 50% reduction  |
+| Memory Usage                     | 2 nodes       | 1 node       | ~40% reduction |
+| Configuration Complexity         | 2 files       | 1 file       | Simplified     |
 
 ## Safety Features
 

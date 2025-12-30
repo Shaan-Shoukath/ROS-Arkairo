@@ -94,6 +94,7 @@ class Drone1FlightController(Node):
         self.declare_parameter('setpoint_rate_hz', 10.0)
         self.declare_parameter('takeoff_timeout_sec', 90.0)
         self.declare_parameter('fcu_timeout_sec', 30.0)
+        self.declare_parameter('hardware_mode', False)  # Set True for real hardware
 
         self.takeoff_altitude = self.get_parameter('takeoff_altitude_m').value
         self.navigation_altitude = self.get_parameter('navigation_altitude_m').value
@@ -104,6 +105,7 @@ class Drone1FlightController(Node):
         self.setpoint_rate = self.get_parameter('setpoint_rate_hz').value
         self.takeoff_timeout = self.get_parameter('takeoff_timeout_sec').value
         self.fcu_timeout = self.get_parameter('fcu_timeout_sec').value
+        self.hardware_mode = self.get_parameter('hardware_mode').value
 
         # ====================================================================
         # STATE VARIABLES
@@ -468,12 +470,29 @@ class Drone1FlightController(Node):
             self.log("GUIDED mode request sent")
 
     def configure_sitl_params(self):
-        """Set ArduPilot parameters for SITL testing (disable auto-disarm)."""
+        """
+        Set ArduPilot parameters for SITL testing (disable auto-disarm).
+        
+        SAFETY: This is skipped in hardware_mode to preserve flight controller
+        safety mechanisms. DISARM_DELAY should remain at default for real flights.
+        """
+        # CRITICAL SAFETY: Skip on real hardware - do not disable FC safeties
+        if self.hardware_mode:
+            self.get_logger().info("Hardware mode - skipping SITL param configuration (safety)")
+            self.log("Hardware mode: SITL params NOT modified for safety")
+            return
+        
+        # Also check environment variable as backup safety
+        if os.environ.get('ROS_ARKAIRO_HARDWARE', 'false').lower() == 'true':
+            self.get_logger().info("ROS_ARKAIRO_HARDWARE=true - skipping SITL params")
+            self.log("Environment flag: SITL params NOT modified")
+            return
+        
         if not self.param_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn("Param service not available - skipping SITL config")
             return
         
-        # Set DISARM_DELAY to 0 (disable auto-disarm on ground)
+        # Set DISARM_DELAY to 0 (disable auto-disarm on ground) - SITL ONLY
         request = ParamSetV2.Request()
         request.param_id = 'DISARM_DELAY'
         request.value = ParameterValue()
@@ -482,7 +501,7 @@ class Drone1FlightController(Node):
         
         future = self.param_client.call_async(request)
         self.get_logger().info("Setting DISARM_DELAY=0 for SITL testing")
-        self.log("DISARM_DELAY=0 set via MAVROS")
+        self.log("DISARM_DELAY=0 set via MAVROS (SITL mode)")
 
     def handle_arm(self):
         """

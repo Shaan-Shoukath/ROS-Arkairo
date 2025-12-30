@@ -1,0 +1,43 @@
+# MAVROS Configuration for Cube Orange+ Hardware
+# Serial connection via TELEM2 port to Raspberry Pi 5
+
+mavros:
+  ros__parameters:
+    # ==========================================================================
+    # FCU CONNECTION
+    # ==========================================================================
+    
+    # Serial connection to Cube Orange+ TELEM2 port
+    # Options:
+    #   /dev/ttyAMA0:921600  - GPIO UART (recommended, requires raspi-config enable)
+    #   /dev/ttyACM0:115200  - USB connection (plug-and-play)
+    fcu_url: "/dev/ttyAMA0:921600"
+    
+    # ==========================================================================
+    # GCS PASSTHROUGH (Optional)
+    # ==========================================================================
+    
+    # Forward MAVLink to Ground Control Station over network
+    # Leave empty to disable, or set to GCS IP:port
+    # Example: "udp://@192.168.1.100:14550"
+    gcs_url: ""
+    
+    # ==========================================================================
+    # SYSTEM IDENTIFICATION
+    # ==========================================================================
+    
+    # Target system ID (ArduPilot default is 1)
+    tgt_system: 1
+    
+    # Target component ID (autopilot is 1)
+    tgt_component: 1
+    
+    # ==========================================================================
+    # TIMEOUT SETTINGS
+    # ==========================================================================
+    
+    # Connection timeout (seconds)
+    conn_timeout: 30.0
+    
+    # Heartbeat timeout before connection is considered lost
+    conn_heartbeat: 5.0

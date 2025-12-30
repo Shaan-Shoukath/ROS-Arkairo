@@ -1,0 +1,144 @@
+# =============================================================================
+# Cube Orange+ ArduPilot Parameters for Drone-1 Survey System
+# =============================================================================
+# Load into ArduPilot via Mission Planner or mavproxy:
+#   mavproxy.py --master=/dev/ttyAMA0 --cmd="param load cube_orange_params.param"
+# =============================================================================
+
+# =============================================================================
+# SERIAL PORTS
+# =============================================================================
+
+# SERIAL1 (TELEM1) - Ground Control Station / SiK Radio
+SERIAL1_PROTOCOL,2          # MAVLink2
+SERIAL1_BAUD,57            # 57600 for SiK radio
+
+# SERIAL2 (TELEM2) - Companion Computer (Raspberry Pi 5)
+SERIAL2_PROTOCOL,2          # MAVLink2
+SERIAL2_BAUD,921           # 921600 for ROS/MAVROS
+
+# SERIAL4 (GPS2/TELEM4) - TF-Luna LiDAR
+SERIAL4_PROTOCOL,11         # Lidar
+SERIAL4_BAUD,115           # 115200 for TF-Luna
+
+# =============================================================================
+# GPS CONFIGURATION
+# =============================================================================
+
+GPS_TYPE,1                  # u-blox
+GPS_AUTO_SWITCH,1           # Auto switch to better GPS
+GPS_GNSS_MODE,0             # Leave at default (all constellations)
+
+# =============================================================================
+# EKF / AHRS
+# =============================================================================
+
+AHRS_EKF_TYPE,3            # Use EKF3
+EK3_PRIMARY,0              # Use first IMU
+EK3_SRC1_POSXY,3           # Position source: GPS
+EK3_SRC1_VELXY,3           # Velocity source: GPS
+EK3_SRC1_POSZ,1            # Altitude source: Baro
+EK3_SRC1_YAW,1             # Yaw source: Compass
+
+# =============================================================================
+# GEOFENCE (Safety Boundary)
+# =============================================================================
+
+FENCE_ENABLE,1              # Enable geofence
+FENCE_TYPE,7                # Circle + Altitude + Polygon
+FENCE_ALT_MAX,50            # Maximum altitude: 50m
+FENCE_ALT_MIN,-5            # Minimum altitude (allow ground)
+FENCE_RADIUS,200            # Maximum radius from home: 200m
+FENCE_ACTION,1              # Action: RTL on breach
+FENCE_MARGIN,5              # Warning margin: 5m
+
+# =============================================================================
+# FAILSAFES
+# =============================================================================
+
+# Radio/Throttle Failsafe
+FS_THR_ENABLE,1             # Enable throttle failsafe
+FS_THR_VALUE,975            # PWM threshold for failsafe
+
+# GCS Failsafe
+FS_GCS_ENABLE,1             # Enable GCS failsafe (loss of MAVROS)
+
+# Battery Failsafe
+FS_BATT_ENABLE,2            # 2 = RTL on low battery
+FS_BATT_VOLTAGE,10.5        # Low voltage threshold (3S: 10.5V, 4S: 14.0V)
+FS_BATT_MAH,0               # mAh threshold (0 = disabled)
+
+# EKF/GPS Failsafe
+FS_EKF_THRESH,0.8           # EKF variance threshold
+FS_EKF_ACTION,1             # Action: Land on EKF failure
+
+# =============================================================================
+# RTL (Return to Launch) SETTINGS
+# =============================================================================
+
+RTL_ALT,1500                # RTL altitude: 15m (in centimeters)
+RTL_SPEED,500               # RTL speed: 5 m/s (in cm/s)
+RTL_CLIMB_MIN,0             # Minimum climb before RTL
+RTL_LOIT_TIME,5000          # Loiter time at home before land: 5s
+
+# =============================================================================
+# TF-LUNA OBJECT AVOIDANCE
+# =============================================================================
+
+# Proximity Sensor Configuration
+PRX_TYPE,8                  # TFMini/TF-Luna
+PRX1_ORIENT,0               # Forward facing (0°)
+PRX1_YAW_CORR,0             # Yaw correction
+PRX1_IGNORE_ANG,-1          # No ignore angle
+PRX1_IGNORE_WID,0           # Ignore width
+PRX1_MIN,0.2                # Minimum detection: 0.2m
+PRX1_MAX,8.0                # Maximum detection: 8m
+
+# Object Avoidance Behavior
+OA_TYPE,1                   # 1 = Simple stop
+OA_DB_OUTPUT,3              # Output to fence + database
+AVOID_ENABLE,7              # All avoidance enabled
+AVOID_MARGIN,2.0            # Safety margin: 2m
+AVOID_BACKUP_SPD,0          # Backup speed (0 = stop only)
+
+# =============================================================================
+# ARMING CHECKS
+# =============================================================================
+
+ARMING_CHECK,1              # All pre-arm checks enabled
+ARMING_RUDDER,2             # Rudder arming enabled
+ARMING_REQUIRE,1            # Require good GPS before arm
+
+# =============================================================================
+# GUIDED MODE (Used by ROS)
+# =============================================================================
+
+GUID_TIMEOUT,3.0            # Command timeout: 3s
+GUID_OPTIONS,0              # Default options
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+LOG_BACKEND_TYPE,1          # SD Card logging
+LOG_FILE_DSRMROT,1          # Start new log on disarm
+LOG_DISARMED,0              # Don't log when disarmed
+
+# =============================================================================
+# BATTERY MONITOR (Adjust for your setup)
+# =============================================================================
+
+BATT_MONITOR,4              # Analog voltage + current
+BATT_VOLT_PIN,2             # Voltage pin (Cube Orange+ default)
+BATT_CURR_PIN,3             # Current pin (Cube Orange+ default)
+BATT_VOLT_MULT,10.1         # Voltage multiplier (calibrate!)
+BATT_AMP_PERVLT,17.0        # Current sensor amps/volt (calibrate!)
+BATT_ARM_VOLT,11.1          # Minimum arm voltage (3S: 11.1V)
+BATT_CRT_VOLT,10.2          # Critical voltage (trigger land)
+
+# =============================================================================
+# RC INPUT (for manual override)
+# =============================================================================
+
+RC_OVERRIDE_TIME,3.0        # RC override timeout: 3s
+RC8_OPTION,9                # CH8 = RTL mode switch (optional)

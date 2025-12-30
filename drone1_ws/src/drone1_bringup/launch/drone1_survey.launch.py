@@ -10,12 +10,15 @@ Launches all nodes for the survey drone:
 - Navigation
 - Image Capture
 - Detection and Geotag
-- GCS Uplink
+- Telemetry TX
+
+Supports both SITL simulation and hardware deployment modes.
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
+from launch.conditions import IfCondition, UnlessCondition
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -25,14 +28,22 @@ def generate_launch_description():
     
     # Launch arguments
     use_sim = LaunchConfiguration('use_sim')
+    hardware = LaunchConfiguration('hardware')
     log_level = LaunchConfiguration('log_level')
     
     return LaunchDescription([
-        # Arguments
+        # =================================================================
+        # LAUNCH ARGUMENTS
+        # =================================================================
         DeclareLaunchArgument(
             'use_sim',
             default_value='false',
-            description='Use simulation mode'
+            description='Use simulation mode (USB camera, relaxed timing)'
+        ),
+        DeclareLaunchArgument(
+            'hardware',
+            default_value='false',
+            description='Hardware deployment mode (disables SITL params, uses hardware_params.yaml)'
         ),
         DeclareLaunchArgument(
             'log_level',
@@ -40,7 +51,15 @@ def generate_launch_description():
             description='Logging level'
         ),
         
-        # KML Lane Planner
+        # Set hardware environment variable for safety checks in nodes
+        SetEnvironmentVariable(
+            name='ROS_ARKAIRO_HARDWARE',
+            value=hardware
+        ),
+        
+        # =================================================================
+        # KML LANE PLANNER
+        # =================================================================
         Node(
             package='kml_lane_planner',
             executable='kml_lane_planner_node',
@@ -56,22 +75,47 @@ def generate_launch_description():
             arguments=['--ros-args', '--log-level', log_level]
         ),
         
-        # Navigation
+        # =================================================================
+        # NAVIGATION - SIMULATION MODE
+        # =================================================================
         Node(
             package='drone1_navigation',
             executable='drone1_navigation_node',
             name='drone1_navigation_node',
             output='screen',
+            condition=UnlessCondition(hardware),
             parameters=[
                 PathJoinSubstitution([
                     FindPackageShare('drone1_navigation'),
                     'config', 'navigation_params.yaml'
-                ])
+                ]),
+                {'hardware_mode': False}
             ],
             arguments=['--ros-args', '--log-level', log_level]
         ),
         
-        # Image Capture
+        # =================================================================
+        # NAVIGATION - HARDWARE MODE
+        # =================================================================
+        Node(
+            package='drone1_navigation',
+            executable='drone1_navigation_node',
+            name='drone1_navigation_node',
+            output='screen',
+            condition=IfCondition(hardware),
+            parameters=[
+                PathJoinSubstitution([
+                    FindPackageShare('drone1_navigation'),
+                    'config', 'hardware_params.yaml'
+                ]),
+                {'hardware_mode': True}
+            ],
+            arguments=['--ros-args', '--log-level', log_level]
+        ),
+        
+        # =================================================================
+        # IMAGE CAPTURE
+        # =================================================================
         Node(
             package='image_capture',
             executable='image_capture_node',
@@ -87,7 +131,9 @@ def generate_launch_description():
             arguments=['--ros-args', '--log-level', log_level]
         ),
         
-        # Detection and Geotag
+        # =================================================================
+        # DETECTION AND GEOTAG
+        # =================================================================
         Node(
             package='detection_and_geotag',
             executable='detection_and_geotag_node',
@@ -102,7 +148,9 @@ def generate_launch_description():
             arguments=['--ros-args', '--log-level', log_level]
         ),
         
-        # Telemetry TX (direct drone-to-drone communication)
+        # =================================================================
+        # TELEMETRY TX (Direct drone-to-drone communication)
+        # =================================================================
         Node(
             package='telem_tx',
             executable='telem_tx_node',
@@ -111,3 +159,4 @@ def generate_launch_description():
             arguments=['--ros-args', '--log-level', log_level]
         ),
     ])
+

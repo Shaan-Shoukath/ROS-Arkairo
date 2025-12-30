@@ -1,0 +1,46 @@
+# Hardware-specific navigation parameters for Cube Orange+ / Raspberry Pi 5
+# Use this configuration for real hardware deployment
+
+drone1_navigation_node:
+  ros__parameters:
+    # ==========================================================================
+    # FLIGHT PARAMETERS (Hardware Defaults)
+    # ==========================================================================
+    
+    # Altitude settings (meters)
+    # 6.7m = 22 feet - conservative for initial hardware testing
+    takeoff_altitude_m: 6.7
+    navigation_altitude_m: 6.7
+    
+    # Waypoint arrival detection (meters)
+    # Larger radius to account for GPS error (~2-5m typical)
+    waypoint_arrival_radius_m: 5.0
+    
+    # Path following parameters
+    path_lookahead_m: 12.0
+    path_max_target_step_m: 25.0
+    path_end_radius_m: 7.0   # Larger for GPS uncertainty
+    
+    # Setpoint publishing rate (Hz)
+    # 10Hz is required minimum for ArduPilot GUIDED mode
+    setpoint_rate_hz: 10.0
+    
+    # ==========================================================================
+    # HARDWARE MODE FLAG
+    # ==========================================================================
+    
+    # CRITICAL: Set to true to disable SITL-only parameter changes
+    # This prevents modification of DISARM_DELAY and other FC safety settings
+    hardware_mode: true
+    
+    # ==========================================================================
+    # TIMEOUT SETTINGS
+    # ==========================================================================
+    
+    # FCU connection timeout (seconds)
+    # Real serial connections may take longer than UDP simulation
+    fcu_timeout_sec: 60.0
+    
+    # Takeoff completion timeout (seconds)
+    # Real motors and propellers need more time than simulation
+    takeoff_timeout_sec: 120.0

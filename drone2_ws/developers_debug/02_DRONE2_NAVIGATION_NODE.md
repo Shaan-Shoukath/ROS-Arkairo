@@ -5,41 +5,50 @@
 **File**: `drone2_ws/src/drone2_navigation/drone2_navigation/drone2_navigation_node.py`  
 **Package**: `drone2_navigation`  
 **Node Name**: `drone2_navigation_node`  
-**Purpose**: Unified autonomous flight controller for Drone-2 (MERGED with mission_manager functionality)
+**Author**: Shaan Shoukath  
+**Purpose**: Unified autonomous flight controller for Drone-2 (sprayer missions)
 
 ## What This Node Does
 
 Complete autonomous flight controller:
 
-1. **Waits for target from telem_rx**
+1. **Waits for target from telem_rx** (via `/drone2/target_position`)
 2. **Arms motors automatically** on first target
 3. **Executes takeoff** to configured altitude
 4. **Navigates to GPS target** using position control
 5. **Publishes arrival status** when reached
-6. **Waits for next target** (30s timeout)
-7. **RTL if no new target** received
+6. **Hovers and waits for next target** (configurable timeout with countdown)
+7. **RTL if no new target** received (resumable if new geotag arrives during RTL)
 
-## Key Feature: UNIFIED ARCHITECTURE
+## Key Features
 
-This node **combines** what was previously two nodes:
+### Dynamic Target Acceptance
 
-- **Old**: `drone2_navigation` (no ARM/TAKEOFF) + `mission_manager` (ARM/TAKEOFF but not used)
-- **New**: Single `drone2_navigation` node with complete autonomous capability
+New targets can be received in **any flight state**:
 
-**Benefit**: Simpler, no coordination between nodes needed.
+- `WAIT_TARGET` → Start flight sequence
+- `NAVIGATE` → Redirect to new target immediately
+- `ARRIVED` → Skip wait, navigate to new target
+- `WAIT_FOR_NEXT` → Navigate to new target
+- `RTL` (timeout only) → Resume navigation
+
+### Resumable RTL
+
+- **Timeout RTL**: If no geotag within wait period → RTL but can resume if new geotag
+- **Emergency RTL**: FCU disconnect or lost GUIDED mode → stays in RTL (safety)
 
 ## State Machine
 
 ```
 IDLE → WAIT_FCU → WAIT_TARGET → SET_GUIDED → ARM → TAKEOFF →
 WAIT_TAKEOFF → NAVIGATE → ARRIVED → WAIT_FOR_NEXT → [NAVIGATE or RTL]
+                              ↑___________________________|
+                    (new geotag during RTL resumes here)
 ```
-
-**Linear progression** similar to Drone-1 navigation.
 
 ## Core Logic
 
-### Target Reception Trigger
+### Target Reception (handles all states)
 
 ```python
 def target_callback(self, msg: NavSatFix):
@@ -50,165 +59,157 @@ def target_callback(self, msg: NavSatFix):
         transition_to(SET_GUIDED)  # First target → start flight
     elif state == WAIT_FOR_NEXT:
         transition_to(NAVIGATE)    # New target → continue mission
+    elif state in [NAVIGATE, ARRIVED]:
+        # Just update target - drone redirects automatically
+        if state == ARRIVED:
+            transition_to(NAVIGATE)
+    elif state == RTL and rtl_due_to_timeout:
+        transition_to(NAVIGATE)    # Resume from timeout RTL
 ```
 
-### GPS to Local Conversion
+### RTL Resume Logic
 
 ```python
-def gps_to_local(lat, lon, alt):
-    # Convert GPS to local ENU coordinates
-    dlat = (lat - home_lat) * 111132.92  # meters per degree
-    dlon = (lon - home_lon) * 111132.92 * cos(home_lat)
-    x = dlon + home_x
-    y = dlat + home_y
-    z = alt
-    return (x, y, z)
+def handle_navigate(self):
+    # If not in GUIDED mode (e.g. resuming from RTL), request it
+    if fcu_state.mode != 'GUIDED':
+        request_guided_mode()
+        return  # Wait for GUIDED
+
+    # Normal navigation...
 ```
 
-**Purpose**: ArduPilot position controller uses local frame.
-
-### Arrival Detection
+### Wait Period with Countdown
 
 ```python
-distance = sqrt((target_x - current_x)² + (target_y - current_y)²)
-if distance < arrival_radius:
-    publish_arrival()
-    start_wait_timer()
+def handle_wait_for_next(self):
+    time_remaining = wait_timeout - time_in_state()
+
+    # Log countdown every 2 seconds
+    log(f'Hovering at waypoint... {time_remaining}s remaining before RTL')
+
+    if time_in_state() >= wait_timeout:
+        rtl_due_to_timeout = True  # Mark as resumable
+        transition_to(RTL)
 ```
 
 ## Subscribers
 
-### 1. `/drone2/target_position` (sensor_msgs/NavSatFix)
-
-- **Source**: Telemetry RX Node
-- **Purpose**: GPS targets from Drone-1
-- **Trigger**: ARM on first, NAVIGATE on subsequent
-
-### 2. `/mavros/state` (mavros_msgs/State)
-
-- **Source**: MAVROS
-- **Purpose**: FCU connection and mode monitoring
-- **Usage**: Check connected, armed, mode
-
-### 3. `/mavros/global_position/global` (sensor_msgs/NavSatFix)
-
-- **Source**: MAVROS
-- **Purpose**: Current GPS, home position capture
-
-### 4. `/mavros/local_position/pose` (geometry_msgs/PoseStamped)
-
-- **Source**: MAVROS
-- **Purpose**: Local position for navigation
+| Topic                                  | Type        | Source   | Purpose                        |
+| -------------------------------------- | ----------- | -------- | ------------------------------ |
+| `/drone2/target_position`              | NavSatFix   | telem_rx | GPS targets from Drone-1       |
+| `/mavros/state`                        | State       | MAVROS   | FCU connection/mode            |
+| `/mavros/global_position/global`       | NavSatFix   | MAVROS   | Current GPS, home capture      |
+| `/mavros/local_position/pose`          | PoseStamped | MAVROS   | Local position for navigation  |
+| `/mavros/global_position/relative_alt` | Float64     | MAVROS   | Barometer altitude for takeoff |
 
 ## Publishers
 
-### 1. `/mavros/setpoint_position/local` (geometry_msgs/PoseStamped)
-
-- **Rate**: 10Hz continuous
-- **Purpose**: Position setpoints to ArduPilot
-- **Critical**: Must stream or failsafe triggers
-
-### 2. `/drone2/arrival_status` (std_msgs/Bool)
-
-- **Trigger**: When arrived at target
-- **Purpose**: Triggers detection/centering node
-- **QoS**: RELIABLE
-
-### 3. `/drone2/navigation_status` (std_msgs/String)
-
-- **Rate**: 1Hz
-- **Purpose**: Current state for monitoring
+| Topic                             | Type        | Rate  | Purpose                        |
+| --------------------------------- | ----------- | ----- | ------------------------------ |
+| `/mavros/setpoint_position/local` | PoseStamped | 10Hz  | Position commands to ArduPilot |
+| `/drone2/arrival_status`          | Bool        | Event | Triggers detection/spraying    |
+| `/drone2/navigation_status`       | String      | 1Hz   | Current state monitoring       |
 
 ## Parameters
 
-| Parameter             | Default | Description                  |
-| --------------------- | ------- | ---------------------------- |
-| `takeoff_altitude_m`  | 10.0    | Takeoff height               |
-| `arrival_radius_m`    | 3.0     | Distance to consider arrived |
-| `setpoint_rate_hz`    | 10.0    | Position command rate        |
-| `wait_timeout_sec`    | 30.0    | Time to wait for next target |
-| `takeoff_timeout_sec` | 60.0    | Max takeoff time             |
-| `fcu_timeout_sec`     | 30.0    | FCU connection timeout       |
+All parameters configurable via `config/navigation_params.yaml`:
 
-## Key Functions
-
-### `fsm_update()` - State Machine (2Hz)
-
-Handles state transitions based on current state.
-
-### `handle_arm()` - Arming Sequence
-
-1. Switch to GUIDED mode
-2. Stream setpoints for 3 seconds
-3. Send ARM command
-4. Retry until armed
-
-### `handle_takeoff()` - Takeoff Command
-
-```python
-req = CommandTOL.Request()
-req.altitude = takeoff_alt
-req.latitude = home_lat
-req.longitude = home_lon
-takeoff_client.call_async(req)
-```
-
-### `handle_navigate()` - Position Control
-
-Continuously publishes target position as setpoint.
-
-### `publish_setpoint()` - 10Hz Streaming
-
-Runs continuously, publishes either:
-
-- Hold position (during ARM)
-- Target position (during NAVIGATE)
+| Parameter               | Default | Description                                   |
+| ----------------------- | ------- | --------------------------------------------- |
+| `takeoff_altitude_m`    | 10.0    | Initial takeoff height                        |
+| `navigation_altitude_m` | 10.0    | Cruise altitude to targets                    |
+| `arrival_radius_m`      | 3.0     | Distance to consider arrived                  |
+| `setpoint_rate_hz`      | 10.0    | Position command rate (≥10Hz required)        |
+| `wait_timeout_sec`      | 10.0    | Time to wait for next geotag (with countdown) |
+| `takeoff_timeout_sec`   | 60.0    | Max takeoff time before RTL                   |
+| `fcu_timeout_sec`       | 30.0    | FCU connection timeout                        |
 
 ## Service Clients
 
 - `/mavros/cmd/arming` - CommandBool
-- `/mavros/set_mode` - SetMode
+- `/mavros/set_mode` - SetMode (GUIDED/RTL)
 - `/mavros/cmd/takeoff` - CommandTOL
+- `/mavros/param/set` - ParamSetV2 (SITL config)
 
-## Package Dependencies
+## SITL Testing
 
-### ROS2
+### Quick Test Commands
 
-- rclpy, std_msgs, sensor_msgs, geometry_msgs, mavros_msgs
+```bash
+# Terminal 1: SITL (wipe state for fresh start)
+cd ~/ardupilot/ArduCopter
+sim_vehicle.py -v ArduCopter --console --map -l 10.0478,76.3303,0,0 -w
 
-### Python
+# Terminal 2: MAVROS
+ros2 launch mavros apm.launch.py fcu_url:=udp://:14550@127.0.0.1:14555
 
-- math (sin, cos, sqrt, radians)
-- enum (Enum, auto)
-- typing (Optional, Tuple)
+# Terminal 3: Navigation Node
+cd ~/Documents/ROSArkairo/drone2_ws && source install/setup.zsh
+ros2 run drone2_navigation drone2_navigation_node --ros-args \
+  --params-file src/drone2_navigation/config/navigation_params.yaml
 
-## Critical Design Rules
+# Terminal 4: Send test targets
+ros2 topic pub /drone2/target_position sensor_msgs/msg/NavSatFix \
+  "{latitude: 10.0481, longitude: 76.3306, altitude: 10.0}" --once
+```
 
-1. **Setpoints stream at 10Hz minimum** from ARM onwards
-2. **ARM once per mission**
-3. **TAKEOFF uses MAV_CMD_NAV_TAKEOFF**
-4. **GUIDED mode only**
-5. **Wait window after arrival** for spray operations
+### Test Locations (from home 10.0478, 76.3303)
+
+| Target  | Latitude | Longitude | Distance |
+| ------- | -------- | --------- | -------- |
+| NE 50m  | 10.0481  | 76.3306   | ~50m     |
+| SE 100m | 10.0474  | 76.3311   | ~100m    |
+
+## Expected Log Output
+
+```
+State: WAIT_TARGET → SET_GUIDED (First target received)
+Setting DISARM_DELAY=0 for SITL testing
+State: SET_GUIDED → ARM (GUIDED mode confirmed)
+Streaming setpoints... (2.0s / 3.0s)
+ARM command sent
+State: ARM → TAKEOFF (Armed)
+TAKEOFF to 10.0m
+Climbing: 5.7m / 10.0m (target: 8.0m)
+Takeoff complete: 8.4m
+State: WAIT_TAKEOFF → NAVIGATE (Takeoff complete)
+Distance to target: 45.2m
+Distance to target: 2.6m
+State: NAVIGATE → ARRIVED (At target)
+Arrived! Targets completed: 1
+State: ARRIVED → WAIT_FOR_NEXT (Published arrival)
+Hovering at waypoint - waiting for next geotag... 9s remaining before RTL
+Hovering at waypoint - waiting for next geotag... 7s remaining before RTL
+10.0s timeout - RTL (resumable if new geotag)
+State: WAIT_FOR_NEXT → RTL (Wait timeout)
+```
 
 ## Testing Checklist
 
-- [ ] Waits for FCU connection
-- [ ] Waits for first target from telem_rx
-- [ ] Arms on first target
-- [ ] Takes off to specified altitude
-- [ ] Navigates to target
-- [ ] Publishes arrival status
-- [ ] Waits 30s for next target
-- [ ] RTL if timeout
+- [x] Waits for FCU connection
+- [x] Waits for first target from telem_rx
+- [x] Arms on first target
+- [x] Takes off to specified altitude
+- [x] Navigates to target
+- [x] Accepts new targets during NAVIGATE (redirects)
+- [x] Publishes arrival status
+- [x] Hovers with countdown during WAIT_FOR_NEXT
+- [x] RTL if timeout
+- [x] Resumes navigation if geotag received during RTL
 
 ## Common Issues
 
-**Doesn't arm**: Check setpoint streaming, FCU mode  
-**Takeoff fails**: Check GPS fix quality  
-**Doesn't navigate**: Check target received, GPS conversion  
-**Premature RTL**: Check wait_timeout parameter
+| Issue                  | Cause                  | Solution                                        |
+| ---------------------- | ---------------------- | ----------------------------------------------- |
+| Doesn't arm            | EKF not ready          | Wait 10-15s after SITL start                    |
+| Takeoff fails          | GPS fix quality        | Wait for 3D fix                                 |
+| Doesn't navigate       | Target not converted   | Check home GPS captured                         |
+| Premature RTL          | wait_timeout too short | Increase in config                              |
+| No redirect mid-flight | Old code               | Use updated node with all-state target handling |
+| Stuck after RTL resume | Mode not GUIDED        | handle_navigate requests GUIDED automatically   |
 
 ---
 
-**Last Updated**: December 30, 2025  
-**Note**: This unified node includes all autonomous flight functionality.
+**Last Updated**: December 31, 2024  
+**Note**: Unified node with dynamic target acceptance and resumable RTL.

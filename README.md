@@ -57,9 +57,9 @@ Drone-1                                              Drone-2
 
 ## 📁 Workspace Structure
 
-| Workspace   | Packages | Description                                                                             |
-| ----------- | -------- | --------------------------------------------------------------------------------------- |
-| `drone1_ws` | 7        | Survey drone - KML planning, navigation, detection, telemetry TX                        |
+| Workspace   | Packages | Description                                                                                 |
+| ----------- | -------- | ------------------------------------------------------------------------------------------- |
+| `drone1_ws` | 7        | Survey drone - KML planning, navigation, detection, telemetry TX                            |
 | `drone2_ws` | 6        | Sprayer drone - **unified navigation** ⚡, **merged detection+centering** ⚡, spray control |
 
 > **Note**: Direct drone-to-drone telemetry communication (no GCS required).  
@@ -77,6 +77,7 @@ Drone-1                                              Drone-2
 - **[📁 Drone-2 Developer Docs](drone2_ws/developers_debug/)** - All 4 nodes documented
 
 Each document includes:
+
 - Complete logic & reasoning behind design decisions
 - All subscribers, publishers, services with descriptions
 - Parameter tables with defaults and explanations
@@ -89,22 +90,22 @@ Each document includes:
 
 ### Drone-1 (Survey System) - 5 Nodes
 
-| Node                     | Description                              | Quick Ref                                              | Dev Docs                                                                    |
-| ------------------------ | ---------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------- |
-| **KML Lane Planner**     | Converts KML boundaries to survey paths  | [📄 Package](drone1_ws/src/kml_lane_planner/)          | [📖 Developer Guide](drone1_ws/developers_debug/02_KML_LANE_PLANNER_NODE.md) |
-| **Drone-1 Navigation**   | Executes survey waypoints via MAVROS     | [📄 Package](drone1_ws/src/drone1_navigation/)         | [📖 Developer Guide](drone1_ws/developers_debug/01_DRONE1_NAVIGATION_NODE.md) |
-| **Image Capture**        | USB camera interface for survey          | [📄 Package](drone1_ws/src/image_capture/)             | [📖 Developer Guide](drone1_ws/developers_debug/03_IMAGE_CAPTURE_NODE.md)     |
-| **Detection & Geotag**   | Disease detection with GPS ray-casting   | [📄 Package](drone1_ws/src/detection_and_geotag/)      | [📖 Developer Guide](drone1_ws/developers_debug/04_DETECTION_AND_GEOTAG_NODE.md) |
-| **Telemetry TX** _(NEW)_ | Transmits geotags over MAVLink telemetry | [📄 Package](drone1_ws/src/telem_tx/)                  | [📖 Developer Guide](drone1_ws/developers_debug/05_TELEM_TX_NODE.md)          |
+| Node                     | Description                              | Quick Ref                                         | Dev Docs                                                                         |
+| ------------------------ | ---------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------- |
+| **KML Lane Planner**     | Converts KML boundaries to survey paths  | [📄 Package](drone1_ws/src/kml_lane_planner/)     | [📖 Developer Guide](drone1_ws/developers_debug/02_KML_LANE_PLANNER_NODE.md)     |
+| **Drone-1 Navigation**   | Executes survey waypoints via MAVROS     | [📄 Package](drone1_ws/src/drone1_navigation/)    | [📖 Developer Guide](drone1_ws/developers_debug/01_DRONE1_NAVIGATION_NODE.md)    |
+| **Image Capture**        | USB camera interface for survey          | [📄 Package](drone1_ws/src/image_capture/)        | [📖 Developer Guide](drone1_ws/developers_debug/03_IMAGE_CAPTURE_NODE.md)        |
+| **Detection & Geotag**   | Disease detection with GPS ray-casting   | [📄 Package](drone1_ws/src/detection_and_geotag/) | [📖 Developer Guide](drone1_ws/developers_debug/04_DETECTION_AND_GEOTAG_NODE.md) |
+| **Telemetry TX** _(NEW)_ | Transmits geotags over MAVLink telemetry | [📄 Package](drone1_ws/src/telem_tx/)             | [📖 Developer Guide](drone1_ws/developers_debug/05_TELEM_TX_NODE.md)             |
 
 ### Drone-2 (Sprayer System) - 4 Nodes
 
-| Node                                 | Description                               | Quick Ref                                           | Dev Docs                                                                          |
-| ------------------------------------ | ----------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------- |
-| **Telemetry RX** _(NEW)_             | Receives geotags from telemetry           | [📄 Package](drone2_ws/src/telem_rx/)               | [📖 Developer Guide](drone2_ws/developers_debug/01_TELEM_RX_NODE.md)              |
-| **Drone-2 Navigation** ⚡            | **Unified** autonomous controller         | [📄 Package](drone2_ws/src/drone2_navigation/)      | [📖 Developer Guide](drone2_ws/developers_debug/02_DRONE2_NAVIGATION_NODE.md) ⚡  |
+| Node                                    | Description                                | Quick Ref                                                  | Dev Docs                                                                           |
+| --------------------------------------- | ------------------------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| **Telemetry RX** _(NEW)_                | Receives geotags from telemetry            | [📄 Package](drone2_ws/src/telem_rx/)                      | [📖 Developer Guide](drone2_ws/developers_debug/01_TELEM_RX_NODE.md)               |
+| **Drone-2 Navigation** ⚡               | **Unified** autonomous controller          | [📄 Package](drone2_ws/src/drone2_navigation/)             | [📖 Developer Guide](drone2_ws/developers_debug/02_DRONE2_NAVIGATION_NODE.md) ⚡   |
 | **Detection & Centering** ⚡ _(MERGED)_ | **Combined** detection and visual servoing | [📄 Package](drone2_ws/src/local_detection_and_centering/) | [📖 Developer Guide](drone2_ws/developers_debug/03_DETECTION_CENTERING_NODE.md) ⚡ |
-| **Sprayer Control**                  | PWM actuation with safety checks          | [📄 Package](drone2_ws/src/sprayer_control/)        | [📖 Developer Guide](drone2_ws/developers_debug/04_SPRAYER_CONTROL_NODE.md)       |
+| **Sprayer Control**                     | PWM actuation with safety checks           | [📄 Package](drone2_ws/src/sprayer_control/)               | [📖 Developer Guide](drone2_ws/developers_debug/04_SPRAYER_CONTROL_NODE.md)        |
 
 > ⚡ **Architecture Note**: `mission_manager` was removed - functionality merged into `drone2_navigation` for simpler unified control
 
@@ -350,6 +351,7 @@ cp field_boundary.kml ~/Documents/ROSArkairo/drone1_ws/missions/
 | **Total** | **2**        | **8**     | **2**       | **13**    |
 
 **Architecture Optimization**:
+
 - ✅ **Drone-2**: Reduced from 9→6 packages (removed mission_manager, local_detection, centering_controller)
 - ⚡ **Latency**: 50% reduction with merged detection+centering
 - 🎯 **Simplicity**: Unified navigation replaces 2-node state coordination
@@ -452,6 +454,7 @@ ros2 topic echo /drone1/detection_enable
 ### **Bringup Packages** (drone1_bringup / drone2_bringup)
 
 Launch orchestration for multi-node systems:
+
 - Python launch files that start all nodes with parameters
 - Config files (YAML) for node parameters
 - Single command launches entire system: `ros2 launch drone2_bringup drone2_sprayer.launch.py`
@@ -459,6 +462,7 @@ Launch orchestration for multi-node systems:
 ### **Message Packages** (drone1_msgs / drone2_msgs)
 
 Custom ROS2 message definitions:
+
 - **drone1_msgs**: `LaneSegment`, `LaneSegmentArray`, `Waypoint` (mission planning)
 - **drone2_msgs**: `MissionState`, `SprayerStatus` (sprayer operations)
 - Compiled into Python/C++ interfaces during `colcon build`

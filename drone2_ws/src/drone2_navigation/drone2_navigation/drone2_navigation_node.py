@@ -1,24 +1,34 @@
 #!/usr/bin/env python3
-# Copyright 2024 Maintainer
+# Copyright 2024 Shaan Shoukath
 # SPDX-License-Identifier: Apache-2.0
 
 """
 Drone-2 Autonomous Navigation Controller
 =========================================
+Hardware: Cube Orange+ | Companion: Raspberry Pi 5
+ROS: Jazzy | Middleware: MAVROS | Mode: GUIDED ONLY
 
 Unified flight controller for Drone-2 sprayer missions.
-Handles: ARM → TAKEOFF → NAVIGATE → WAIT/RTL cycle.
-
 Modeled after drone1_navigation for consistent behavior.
 
 State Machine:
-    IDLE → WAIT_FCU → SET_GUIDED → ARM → TAKEOFF → NAVIGATE → 
-    ARRIVED → WAIT_FOR_NEXT → [NAVIGATE or RTL] → LANDED
+    IDLE → WAIT_FCU → WAIT_TARGET → SET_GUIDED → ARM →
+    TAKEOFF → WAIT_TAKEOFF → NAVIGATE → ARRIVED →
+    WAIT_FOR_NEXT → [NAVIGATE or RTL] → LANDED
+
+Critical Design Rules (same as Drone-1):
+  ✅ MAV_CMD_NAV_TAKEOFF is the ONLY way to initiate flight
+  ✅ Position setpoints stream at 10Hz starting from ARM state
+  ✅ ARM happens exactly once
+  ✅ TAKEOFF happens exactly once
+  ✅ Throttle/PWM controlled exclusively by ArduPilot
+  ✅ No RC override, no velocity-based takeoff, no AUTO mode
 
 Subscribers:
     /drone2/target_position (sensor_msgs/NavSatFix): Target from telem_rx
     /mavros/state (mavros_msgs/State): FCU connection & mode
     /mavros/global_position/global (sensor_msgs/NavSatFix): Current GPS
+    /mavros/global_position/relative_alt (std_msgs/Float64): Barometer altitude
     /mavros/local_position/pose (geometry_msgs/PoseStamped): Local position
 
 Publishers:
@@ -28,6 +38,8 @@ Publishers:
 """
 
 import math
+import os
+from datetime import datetime
 from enum import Enum, auto
 from typing import Optional, Tuple
 
@@ -35,11 +47,12 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
-from std_msgs.msg import Bool, String, Header
+from std_msgs.msg import Bool, String, Float64
 from sensor_msgs.msg import NavSatFix
 from geometry_msgs.msg import PoseStamped
 from mavros_msgs.msg import State
-from mavros_msgs.srv import CommandBool, SetMode, CommandTOL
+from mavros_msgs.srv import CommandBool, SetMode, CommandTOL, ParamSetV2
+from rcl_interfaces.msg import ParameterValue, ParameterType
 
 
 class FlightState(Enum):
@@ -59,7 +72,12 @@ class FlightState(Enum):
 
 
 class Drone2NavigationNode(Node):
-    """Unified autonomous flight controller for Drone-2."""
+    """
+    Unified autonomous flight controller for Drone-2.
+    
+    Designed for real hardware (Cube Orange+ / Raspberry Pi 5) and SITL testing.
+    Uses GUIDED mode exclusively with position-based control.
+    """
     
     EARTH_RADIUS = 6371000  # meters
     
@@ -67,16 +85,18 @@ class Drone2NavigationNode(Node):
         super().__init__('drone2_navigation_node')
         
         # ================================================================
-        # PARAMETERS
+        # PARAMETERS (matching Drone-1 structure)
         # ================================================================
         self.declare_parameter('takeoff_altitude_m', 10.0)
+        self.declare_parameter('navigation_altitude_m', 10.0)  # Guided height for navigation
         self.declare_parameter('arrival_radius_m', 3.0)
         self.declare_parameter('setpoint_rate_hz', 10.0)
-        self.declare_parameter('wait_timeout_sec', 30.0)
+        self.declare_parameter('wait_timeout_sec', 10.0)  # Wait 10s for next geotag before RTL
         self.declare_parameter('takeoff_timeout_sec', 60.0)
         self.declare_parameter('fcu_timeout_sec', 30.0)
         
         self.takeoff_alt = self.get_parameter('takeoff_altitude_m').value
+        self.navigation_alt = self.get_parameter('navigation_altitude_m').value
         self.arrival_radius = self.get_parameter('arrival_radius_m').value
         self.setpoint_rate = self.get_parameter('setpoint_rate_hz').value
         self.wait_timeout = self.get_parameter('wait_timeout_sec').value
@@ -98,6 +118,8 @@ class Drone2NavigationNode(Node):
         # Position tracking
         self.current_gps: Optional[NavSatFix] = None
         self.local_pose: Optional[PoseStamped] = None
+        self.relative_altitude: Optional[float] = None  # Barometer altitude (like Drone-1)
+        self.use_local_z_for_altitude = False  # Fallback if relative_alt unavailable
         self.home_gps: Optional[Tuple[float, float]] = None
         self.home_local: Optional[Tuple[float, float, float]] = None
         
@@ -105,6 +127,12 @@ class Drone2NavigationNode(Node):
         self.target_gps: Optional[NavSatFix] = None
         self.target_local: Optional[Tuple[float, float, float]] = None
         self.targets_completed = 0
+        
+        # RTL tracking - can resume from timeout RTL but not emergency RTL
+        self.rtl_due_to_timeout = False
+        
+        # SITL configuration flag
+        self.params_configured = False
         
         # ================================================================
         # QOS
@@ -123,9 +151,10 @@ class Drone2NavigationNode(Node):
         # ================================================================
         # SUBSCRIBERS
         # ================================================================
+        # Use sensor_qos for target_position (flexible for ros2 topic pub testing)
         self.create_subscription(
             NavSatFix, '/drone2/target_position',
-            self.target_callback, reliable_qos
+            self.target_callback, sensor_qos
         )
         self.create_subscription(
             State, '/mavros/state',
@@ -138,6 +167,11 @@ class Drone2NavigationNode(Node):
         self.create_subscription(
             PoseStamped, '/mavros/local_position/pose',
             self.pose_callback, sensor_qos
+        )
+        # Relative altitude for accurate takeoff detection (like Drone-1)
+        self.create_subscription(
+            Float64, '/mavros/global_position/relative_alt',
+            self.relative_alt_callback, sensor_qos
         )
         
         # ================================================================
@@ -159,6 +193,7 @@ class Drone2NavigationNode(Node):
         self.arming_client = self.create_client(CommandBool, '/mavros/cmd/arming')
         self.mode_client = self.create_client(SetMode, '/mavros/set_mode')
         self.takeoff_client = self.create_client(CommandTOL, '/mavros/cmd/takeoff')
+        self.param_client = self.create_client(ParamSetV2, '/mavros/param/set')
         
         # ================================================================
         # TIMERS
@@ -167,12 +202,30 @@ class Drone2NavigationNode(Node):
         self.create_timer(1.0 / self.setpoint_rate, self.publish_setpoint)
         self.create_timer(1.0, self.publish_status)
         
+        # ================================================================
+        # LOGGING (like Drone-1)
+        # ================================================================
+        log_dir = os.path.expanduser('~/Documents/ROSArkairo/logs')
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, 'drone2_flight_latest.log')
+        self.log_file = open(log_file, 'w')
+        self.log(f"Drone-2 Flight Controller initialized at {datetime.now()}")
+        self.log(f"Takeoff altitude: {self.takeoff_alt}m")
+        self.log(f"Navigation altitude: {self.navigation_alt}m")
+        
         self.get_logger().info('=' * 60)
-        self.get_logger().info('Drone-2 Autonomous Navigation Controller')
+        self.get_logger().info('Drone-2 Autonomous Navigation Controller - Position Control Mode')
         self.get_logger().info('=' * 60)
-        self.get_logger().info(f'  Takeoff: {self.takeoff_alt}m')
-        self.get_logger().info(f'  Arrival radius: {self.arrival_radius}m')
-        self.get_logger().info(f'  Wait timeout: {self.wait_timeout}s')
+        self.get_logger().info(f'Takeoff: {self.takeoff_alt}m | Navigate: {self.navigation_alt}m')
+        self.get_logger().info(f'Arrival radius: {self.arrival_radius}m')
+        self.get_logger().info(f'Wait timeout: {self.wait_timeout}s')
+        self.get_logger().info('Waiting for target from telem_rx...')
+    
+    def log(self, message: str):
+        """Write to both ROS logger and file."""
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+        self.log_file.write(f"[{timestamp}] {message}\n")
+        self.log_file.flush()
     
     # ====================================================================
     # STATE TRANSITIONS
@@ -204,28 +257,64 @@ class Drone2NavigationNode(Node):
             f'lon={msg.longitude:.6f}, alt={msg.altitude:.1f}m'
         )
         
-        # Convert to local if we have home
+        # Convert to local if we have home - use navigation altitude (guided height)
         if self.home_gps and self.home_local:
             self.target_local = self.gps_to_local(
-                msg.latitude, msg.longitude, self.takeoff_alt
+                msg.latitude, msg.longitude, self.navigation_alt
             )
             self.get_logger().info(
                 f'Target local: x={self.target_local[0]:.1f}, '
                 f'y={self.target_local[1]:.1f}, z={self.target_local[2]:.1f}'
             )
         
-        # Trigger flight if waiting for target
+        # Trigger flight or update target based on current state
         if self.state == FlightState.WAIT_TARGET:
             self.transition_to(FlightState.SET_GUIDED, 'First target received')
         elif self.state == FlightState.WAIT_FOR_NEXT:
             self.transition_to(FlightState.NAVIGATE, 'New target during wait')
+        elif self.state in [FlightState.NAVIGATE, FlightState.ARRIVED]:
+            # New target while flying - just update target and continue navigation
+            self.get_logger().info('New target received during flight - redirecting!')
+            self.log(f'Redirecting to new target: ({msg.latitude:.6f}, {msg.longitude:.6f})')
+            # Stay in NAVIGATE (or move to NAVIGATE if in ARRIVED)
+            if self.state == FlightState.ARRIVED:
+                self.transition_to(FlightState.NAVIGATE, 'New target during arrival')
+        elif self.state == FlightState.RTL and self.rtl_due_to_timeout:
+            # Resume from timeout-RTL if new geotag received
+            # Drone is already in the air - go directly to NAVIGATE (skip ARM/TAKEOFF)
+            self.get_logger().info('New geotag received during RTL - resuming navigation!')
+            self.log('Resuming from timeout-RTL due to new geotag')
+            self.rtl_due_to_timeout = False
+            # Go directly to NAVIGATE since we're already airborne
+            self.transition_to(FlightState.NAVIGATE, 'Resume from RTL - new geotag')
+    
+    def relative_alt_callback(self, msg: Float64):
+        """Track relative altitude for takeoff detection (barometer-based)."""
+        self.relative_altitude = msg.data
     
     def state_callback(self, msg: State):
         """Monitor FCU connection and mode."""
         self.fcu_state = msg
+        
+        # Detect connection
         if msg.connected and not self.fcu_connected:
             self.fcu_connected = True
             self.get_logger().info('FCU connected')
+            self.log('FCU connection established')
+        
+        # Detect disconnection - emergency RTL
+        if not msg.connected and self.fcu_connected:
+            self.get_logger().error('FCU DISCONNECTED - Emergency RTL')
+            self.log('FCU connection lost - initiating RTL')
+            self.transition_to(FlightState.RTL, 'FCU disconnected')
+        
+        # Detect mode exit during flight - emergency RTL
+        if self.state in [FlightState.ARM, FlightState.TAKEOFF,
+                          FlightState.WAIT_TAKEOFF, FlightState.NAVIGATE]:
+            if msg.mode != 'GUIDED':
+                self.get_logger().error(f'Lost GUIDED mode (now {msg.mode}) - Emergency RTL')
+                self.log(f'Mode changed from GUIDED to {msg.mode} - initiating RTL')
+                self.transition_to(FlightState.RTL, 'Lost GUIDED mode')
     
     def gps_callback(self, msg: NavSatFix):
         """Update current GPS and capture home."""
@@ -335,14 +424,22 @@ class Drone2NavigationNode(Node):
     # ====================================================================
     
     def handle_set_guided(self):
-        """Request GUIDED mode."""
+        """Set GUIDED mode and configure SITL parameters."""
         if not self.fcu_state:
             return
         
         if self.fcu_state.mode == 'GUIDED':
-            self.transition_to(FlightState.ARM, 'GUIDED confirmed')
+            # Configure SITL parameters before arming (only once)
+            if not self.params_configured:
+                self.configure_sitl_params()
+                self.params_configured = True
+                return  # Wait for params to be set
+            
+            self.transition_to(FlightState.ARM, 'GUIDED mode confirmed')
+            self.log('GUIDED mode confirmed - proceeding to ARM')
             return
         
+        # Request GUIDED mode (rate limited)
         if self.time_in_state() < 1.0:
             return
         
@@ -351,6 +448,24 @@ class Drone2NavigationNode(Node):
             req.custom_mode = 'GUIDED'
             self.mode_client.call_async(req)
             self.get_logger().info('Requesting GUIDED mode')
+            self.log('GUIDED mode request sent')
+    
+    def configure_sitl_params(self):
+        """Set ArduPilot parameters for SITL testing (disable auto-disarm)."""
+        if not self.param_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().warn('Param service not available - skipping SITL config')
+            return
+        
+        # Set DISARM_DELAY to 0 (disable auto-disarm on ground)
+        request = ParamSetV2.Request()
+        request.param_id = 'DISARM_DELAY'
+        request.value = ParameterValue()
+        request.value.type = ParameterType.PARAMETER_INTEGER
+        request.value.integer_value = 0
+        
+        self.param_client.call_async(request)
+        self.get_logger().info('Setting DISARM_DELAY=0 for SITL testing')
+        self.log('DISARM_DELAY=0 set via MAVROS')
     
     def handle_arm(self):
         """Stream setpoints then arm."""
@@ -415,29 +530,63 @@ class Drone2NavigationNode(Node):
             self.transition_to(FlightState.WAIT_TAKEOFF, 'Takeoff requested')
     
     def handle_wait_takeoff(self):
-        """Monitor altitude during takeoff."""
+        """
+        Monitor altitude climb until takeoff complete.
+        
+        Uses relative_altitude (barometer-based) as primary reference.
+        Transition to NAVIGATE when ≥80% of target altitude reached.
+        """
         if not self.fcu_state or not self.fcu_state.armed:
             self.get_logger().error('Disarmed during takeoff')
-            self.transition_to(FlightState.RTL, 'Disarmed')
+            self.log('Motors disarmed during climb - entering RTL')
+            self.transition_to(FlightState.RTL, 'Disarmed during takeoff')
             return
         
+        # Check timeout
         if self.time_in_state() > self.takeoff_timeout:
-            self.get_logger().error('Takeoff timeout')
-            self.transition_to(FlightState.RTL, 'Timeout')
+            self.get_logger().error('Takeoff timeout - altitude not reached')
+            self.log(f'Takeoff timeout: altitude {self.relative_altitude}m after {self.takeoff_timeout}s')
+            self.transition_to(FlightState.RTL, 'Takeoff timeout')
             return
         
-        if self.local_pose is None:
+        # Determine altitude source (like Drone-1)
+        current_alt = self.relative_altitude
+        alt_source = 'relative_alt'
+        
+        # Fallback: if relative_alt is None after 2s, use local_pose.z
+        if self.relative_altitude is None and self.time_in_state() > 2.0:
+            if self.local_pose is not None:
+                if not self.use_local_z_for_altitude:
+                    self.get_logger().warn(
+                        'MAVROS /mavros/global_position/relative_alt not available, '
+                        'falling back to /mavros/local_position/pose.position.z'
+                    )
+                    self.use_local_z_for_altitude = True
+                current_alt = self.local_pose.pose.position.z
+                alt_source = 'local_z'
+        
+        self.get_logger().info(
+            f'[WAIT_TAKEOFF] alt={current_alt} ({alt_source}) target={self.takeoff_alt * 0.8:.1f}m time={self.time_in_state():.1f}s'
+        )
+        
+        # Monitor altitude
+        if current_alt is None:
+            self.get_logger().warn('Waiting for altitude data (relative_alt or local_pose.z)...')
             return
         
-        alt = self.local_pose.pose.position.z
         target = self.takeoff_alt * 0.8
         
-        if int(self.time_in_state()) % 2 == 0:
-            self.get_logger().info(f'Climbing: {alt:.1f}m / {self.takeoff_alt}m')
+        # Log progress every 2 seconds
+        if int(self.time_in_state()) % 2 == 0 and self.time_in_state() > 0:
+            self.get_logger().info(
+                f'Climbing: {current_alt:.1f}m / {self.takeoff_alt:.1f}m '
+                f'(target: {target:.1f}m)'
+            )
         
-        if alt >= target:
-            self.get_logger().info(f'Takeoff complete: {alt:.1f}m')
-            self.transition_to(FlightState.NAVIGATE, 'At altitude')
+        if current_alt >= target:
+            self.get_logger().info(f'Takeoff complete: {current_alt:.1f}m')
+            self.log(f'Takeoff successful: altitude {current_alt:.1f}m reached')
+            self.transition_to(FlightState.NAVIGATE, 'Takeoff complete')
     
     def handle_navigate(self):
         """Navigate to target."""
@@ -445,6 +594,17 @@ class Drone2NavigationNode(Node):
             self.get_logger().error('Disarmed during navigation')
             self.transition_to(FlightState.RTL, 'Disarmed')
             return
+        
+        # Ensure we're in GUIDED mode (needed when resuming from RTL)
+        if self.fcu_state.mode != 'GUIDED':
+            # Request GUIDED mode (rate limited)
+            if self.time_in_state() < 10 and int(self.time_in_state() * 2) % 2 == 0:
+                if self.mode_client.wait_for_service(timeout_sec=0.1):
+                    req = SetMode.Request()
+                    req.custom_mode = 'GUIDED'
+                    self.mode_client.call_async(req)
+                    self.get_logger().info(f'Requesting GUIDED mode (currently: {self.fcu_state.mode})')
+            return  # Wait for GUIDED mode
         
         if self.target_local is None or self.local_pose is None:
             return
@@ -473,9 +633,21 @@ class Drone2NavigationNode(Node):
         self.transition_to(FlightState.WAIT_FOR_NEXT, 'Published arrival')
     
     def handle_wait_for_next(self):
-        """Wait for next target or RTL."""
-        if self.time_in_state() >= self.wait_timeout:
-            self.get_logger().info(f'{self.wait_timeout}s timeout - RTL')
+        """Wait at current position for next target, then RTL if timeout."""
+        time_in = self.time_in_state()
+        time_remaining = self.wait_timeout - time_in
+        
+        # Show countdown every 2 seconds (at 0.5, 2.5, 4.5, 6.5, 8.5...)
+        if int(time_in + 0.5) % 2 == 1 and time_in < self.wait_timeout:
+            self.get_logger().info(
+                f'Hovering at waypoint - waiting for next geotag... '
+                f'{max(0, int(time_remaining))}s remaining before RTL'
+            )
+        
+        # Timeout reached - initiate RTL
+        if time_in >= self.wait_timeout:
+            self.get_logger().info(f'{self.wait_timeout}s timeout - RTL (resumable if new geotag)')
+            self.rtl_due_to_timeout = True  # Mark as resumable
             self.transition_to(FlightState.RTL, 'Wait timeout')
     
     def handle_rtl(self):
@@ -529,7 +701,7 @@ class Drone2NavigationNode(Node):
             else:
                 setpoint.pose.position.x = self.local_pose.pose.position.x
                 setpoint.pose.position.y = self.local_pose.pose.position.y
-                setpoint.pose.position.z = self.takeoff_alt
+                setpoint.pose.position.z = self.navigation_alt
         
         # Keep current orientation
         setpoint.pose.orientation = self.local_pose.pose.orientation

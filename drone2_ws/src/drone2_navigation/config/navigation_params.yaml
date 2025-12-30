@@ -1,17 +1,48 @@
-# Drone-2 Navigation configuration
+# =============================================================================
+# Drone-2 Navigation Configuration
+# =============================================================================
+# All parameters can be modified here for SITL testing or real-life deployment.
+# No code changes needed - just edit this file and rebuild/restart the node.
+#
+# IMPORTANT: For real deployment, review all values carefully!
+# =============================================================================
+
 /**:
   ros__parameters:
-    # Waypoint acceptance radius
-    arrival_radius_m: 2.0
+    # -------------------------------------------------------------------------
+    # ALTITUDE SETTINGS (meters)
+    # -------------------------------------------------------------------------
+    # Initial takeoff altitude - drone climbs to this before starting navigation
+    takeoff_altitude_m: 10.0
 
-    # Speed settings
-    approach_speed: 3.0 # m/s
+    # Navigation/cruise altitude - maintains this height while flying to targets
+    # For sprayer drone: typically same as takeoff or slightly lower
+    navigation_altitude_m: 10.0
 
-    # Altitude settings
-    approach_altitude_m: 10.0
+    # -------------------------------------------------------------------------
+    # WAYPOINT SETTINGS
+    # -------------------------------------------------------------------------
+    # Radius to consider "arrived" at target (meters)
+    # Larger = easier to hit, smaller = more precise but may overshoot
+    # Recommended: 2.0-3.0m for GPS precision, 5.0m for windy conditions
+    arrival_radius_m: 3.0
 
-    # Navigation update rate
-    update_rate_hz: 10.0
+    # -------------------------------------------------------------------------
+    # TIMING SETTINGS (seconds)
+    # -------------------------------------------------------------------------
+    # Position setpoint publishing rate (Hz) - MUST BE ≥10Hz for ArduPilot GUIDED mode
+    # Lower = less CPU, Higher = smoother flight (max recommended: 20Hz)
+    setpoint_rate_hz: 10.0
 
-    # Timeout
-    navigation_timeout_sec: 120.0
+    # Time to wait for next geotag after arriving at target
+    # If exceeded, drone RTLs (but can resume if new geotag received)
+    # SITL testing: 10s | Real deployment: 30-60s recommended
+    wait_timeout_sec: 10.0
+
+    # Maximum time to wait for takeoff completion
+    # If drone doesn't reach 80% of takeoff_altitude within this time, RTL triggered
+    # Increase for high-altitude or windy conditions
+    takeoff_timeout_sec: 60.0
+
+    # Maximum time to wait for FCU (flight controller) connection at startup
+    fcu_timeout_sec: 30.0

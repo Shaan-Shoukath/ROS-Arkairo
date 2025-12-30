@@ -7,11 +7,9 @@ Drone-2 Sprayer System Launch File
 
 Launches all nodes for the sprayer drone:
 - Telemetry RX (receives and dispatches geotags)
-- Navigation
-- Local Detection
-- Centering Controller
+- Navigation (unified with ARM/TAKEOFF/NAV)
+- Detection & Centering (MERGED NODE)
 - Sprayer Control
-- Mission Manager
 """
 
 from launch import LaunchDescription
@@ -50,26 +48,14 @@ def generate_launch_description():
             arguments=['--ros-args', '--log-level', log_level]
         ),
         
-        # Local Detection
+        # Detection & Centering (MERGED NODE)
         Node(
-            package='local_detection',
-            executable='local_detection_node',
-            name='local_detection_node',
+            package='local_detection_and_centering',
+            executable='detection_centering_node',
+            name='detection_centering_node',
             output='screen',
             parameters=[PathJoinSubstitution([
-                FindPackageShare('local_detection'), 'config', 'detection_params.yaml'
-            ])],
-            arguments=['--ros-args', '--log-level', log_level]
-        ),
-        
-        # Centering Controller
-        Node(
-            package='centering_controller',
-            executable='centering_controller_node',
-            name='centering_controller_node',
-            output='screen',
-            parameters=[PathJoinSubstitution([
-                FindPackageShare('centering_controller'), 'config', 'centering_params.yaml'
+                FindPackageShare('local_detection_and_centering'), 'config', 'detection_centering_params.yaml'
             ])],
             arguments=['--ros-args', '--log-level', log_level]
         ),
@@ -82,18 +68,6 @@ def generate_launch_description():
             output='screen',
             parameters=[PathJoinSubstitution([
                 FindPackageShare('sprayer_control'), 'config', 'sprayer_params.yaml'
-            ])],
-            arguments=['--ros-args', '--log-level', log_level]
-        ),
-        
-        # Mission Manager
-        Node(
-            package='mission_manager',
-            executable='mission_manager_node',
-            name='mission_manager_node',
-            output='screen',
-            parameters=[PathJoinSubstitution([
-                FindPackageShare('mission_manager'), 'config', 'manager_params.yaml'
             ])],
             arguments=['--ros-args', '--log-level', log_level]
         ),

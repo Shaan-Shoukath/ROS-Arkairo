@@ -1,0 +1,23 @@
+detection_centering_node:
+  ros__parameters:
+    # Detection parameters
+    confidence_threshold: 0.6
+    detection_timeout_sec: 30.0
+    max_detection_attempts: 5
+    require_consecutive_detections: 2
+    min_detection_area_px: 500
+    
+    # Centering parameters
+    image_width: 1920
+    image_height: 1080
+    centered_threshold_pixels: 30
+    max_velocity_mps: 0.5
+    
+    # PID gains
+    kp: 0.002
+    ki: 0.0001
+    kd: 0.001
+    
+    # Timeout
+    centering_timeout_sec: 30.0
+    control_rate_hz: 20.0

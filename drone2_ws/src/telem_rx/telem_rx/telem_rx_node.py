@@ -56,6 +56,13 @@ class TelemRxNode(Node):
         self.declare_parameter('override_altitude', False)
         self.declare_parameter('target_altitude_m', 20.0)
         
+        # Dummy geotag parameters for testing (like drone1's test mode)
+        self.declare_parameter('use_dummy_geotags', False)
+        self.declare_parameter('dummy_lat', 10.0480)  # Default test location
+        self.declare_parameter('dummy_lon', 76.3305)
+        self.declare_parameter('dummy_alt', 10.0)
+        self.declare_parameter('dummy_interval_sec', 10.0)  # How often to send dummy
+        
         # Get parameters
         self.validate_coords = self.get_parameter('validate_coordinates').value
         self.max_distance = self.get_parameter('max_distance_from_home_m').value
@@ -63,6 +70,13 @@ class TelemRxNode(Node):
         self.home_lon = self.get_parameter('home_longitude').value
         self.override_alt = self.get_parameter('override_altitude').value
         self.target_alt = self.get_parameter('target_altitude_m').value
+        
+        # Dummy mode parameters
+        self.use_dummy = self.get_parameter('use_dummy_geotags').value
+        self.dummy_lat = self.get_parameter('dummy_lat').value
+        self.dummy_lon = self.get_parameter('dummy_lon').value
+        self.dummy_alt = self.get_parameter('dummy_alt').value
+        self.dummy_interval = self.get_parameter('dummy_interval_sec').value
         
         # Message buffer
         self.buffer_lat: Optional[float] = None
@@ -75,6 +89,7 @@ class TelemRxNode(Node):
         self.rx_count = 0
         self.dispatched_count = 0
         self.rejected_count = 0
+        self.dummy_sent = False  # Track if dummy has been sent
         
         # QoS profiles
         reliable_qos = QoSProfile(
@@ -83,13 +98,14 @@ class TelemRxNode(Node):
             depth=10
         )
         
-        # Subscriber: MAVLink debug value (from MAVROS)
-        self.mavlink_sub = self.create_subscription(
-            DebugValue,
-            '/mavros/debug_value/recv',
-            self.mavlink_callback,
-            10
-        )
+        # Subscriber: MAVLink debug value (from MAVROS) - only if not dummy mode
+        if not self.use_dummy:
+            self.mavlink_sub = self.create_subscription(
+                DebugValue,
+                '/mavros/debug_value/recv',
+                self.mavlink_callback,
+                10
+            )
         
         # Publishers: Navigation target and trigger
         self.position_pub = self.create_publisher(
@@ -104,13 +120,43 @@ class TelemRxNode(Node):
             10
         )
         
-        # Timer for buffer timeout check
-        self.timeout_timer = self.create_timer(1.0, self.check_buffer_timeout)
+        # Timer for buffer timeout check (only when not in dummy mode)
+        if not self.use_dummy:
+            self.timeout_timer = self.create_timer(1.0, self.check_buffer_timeout)
         
-        self.get_logger().info('Telemetry RX Node initialized')
-        self.get_logger().info('  Listening: /mavros/debug_value/recv')
+        # Timer for dummy geotag publishing
+        if self.use_dummy:
+            self.dummy_timer = self.create_timer(self.dummy_interval, self.publish_dummy_geotag)
+            self.get_logger().info('=== DUMMY GEOTAG MODE ENABLED ===')
+            self.get_logger().info(f'  Target: lat={self.dummy_lat:.6f}, lon={self.dummy_lon:.6f}, alt={self.dummy_alt:.1f}m')
+            self.get_logger().info(f'  Interval: {self.dummy_interval}s')
+        else:
+            self.get_logger().info('Telemetry RX Node initialized')
+            self.get_logger().info('  Listening: /mavros/debug_value/recv')
+        
         self.get_logger().info('  Publishing: /drone2/target_position')
         self.get_logger().info(f'  Override altitude: {self.override_alt} ({self.target_alt}m)')
+    
+    def publish_dummy_geotag(self):
+        """Publish dummy geotag for testing purposes."""
+        if self.dummy_sent:
+            return  # Only send once (can be modified for continuous testing)
+        
+        self.get_logger().info('Publishing DUMMY geotag for testing...')
+        
+        lat = self.dummy_lat
+        lon = self.dummy_lon
+        alt = self.dummy_alt
+        
+        # Validate if configured
+        if self.validate_coords and not self._validate_coordinates(lat, lon):
+            self.get_logger().error('Dummy geotag rejected: invalid coordinates')
+            return
+        
+        # Dispatch to navigation
+        self._dispatch_target(lat, lon, alt)
+        self.dummy_sent = True
+        self.get_logger().info('Dummy geotag dispatched - waiting for drone response')
     
     def mavlink_callback(self, msg: DebugValue):
         """Buffer incoming MAVLink messages and reconstruct geotag."""

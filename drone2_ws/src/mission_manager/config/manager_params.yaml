@@ -1,5 +1,0 @@
-# Mission manager configuration
-/**:
-  ros__parameters:
-    status_publish_rate_hz: 1.0
-    enable_logging: true

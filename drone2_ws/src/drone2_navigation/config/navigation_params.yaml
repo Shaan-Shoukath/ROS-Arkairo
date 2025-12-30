@@ -46,3 +46,15 @@
 
     # Maximum time to wait for FCU (flight controller) connection at startup
     fcu_timeout_sec: 30.0
+
+    # -------------------------------------------------------------------------
+    # SPRAY / HARDWARE SETTINGS
+    # -------------------------------------------------------------------------
+    # Simulation mode: true = use PWM topic, false = use MAVROS servo command
+    use_sim: true
+
+    # Delay before spray pump activates (seconds) - allows mechanism to stabilize
+    spray_start_delay_sec: 2.5
+
+    # ArduPilot servo channel for hardware relay (used when use_sim: false)
+    servo_channel: 10

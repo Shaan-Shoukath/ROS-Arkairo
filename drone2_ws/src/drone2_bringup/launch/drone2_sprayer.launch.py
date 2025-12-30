@@ -10,6 +10,12 @@ Launches all nodes for the sprayer drone:
 - Navigation (unified with ARM/TAKEOFF/NAV)
 - Detection & Centering (MERGED NODE)
 - Sprayer Control
+
+Launch arguments:
+    use_sim: Use simulation mode (default: true)
+            - true: Sprayer uses PWM topic for testing
+            - false: Sprayer uses MAVROS servo command for hardware relay
+    log_level: Logging level (default: info)
 """
 
 from launch import LaunchDescription
@@ -22,10 +28,22 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     """Generate launch description for Drone-2."""
     
+    # Launch arguments
+    use_sim = LaunchConfiguration('use_sim')
     log_level = LaunchConfiguration('log_level')
     
     return LaunchDescription([
-        DeclareLaunchArgument('log_level', default_value='info'),
+        # Arguments
+        DeclareLaunchArgument(
+            'use_sim',
+            default_value='true',
+            description='Use simulation mode (true=PWM topic, false=MAVROS servo)'
+        ),
+        DeclareLaunchArgument(
+            'log_level',
+            default_value='info',
+            description='Logging level'
+        ),
         
         # Telemetry RX (receives geotags from Drone-1, validates, and dispatches)
         Node(
@@ -60,15 +78,19 @@ def generate_launch_description():
             arguments=['--ros-args', '--log-level', log_level]
         ),
         
-        # Sprayer Control
+        # Sprayer Control (with use_sim parameter)
         Node(
             package='sprayer_control',
             executable='sprayer_control_node',
             name='sprayer_control_node',
             output='screen',
-            parameters=[PathJoinSubstitution([
-                FindPackageShare('sprayer_control'), 'config', 'sprayer_params.yaml'
-            ])],
+            parameters=[
+                PathJoinSubstitution([
+                    FindPackageShare('sprayer_control'), 'config', 'sprayer_params.yaml'
+                ]),
+                {'use_sim': use_sim}  # Override from launch argument
+            ],
             arguments=['--ros-args', '--log-level', log_level]
         ),
     ])
+

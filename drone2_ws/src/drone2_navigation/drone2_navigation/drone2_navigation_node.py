@@ -66,6 +66,7 @@ class FlightState(Enum):
     WAIT_TAKEOFF = auto()
     NAVIGATE = auto()
     ARRIVED = auto()
+    WAIT_SPRAY = auto()     # Wait for centering + spray to complete
     WAIT_FOR_NEXT = auto()
     RTL = auto()
     LANDED = auto()
@@ -172,6 +173,12 @@ class Drone2NavigationNode(Node):
         self.create_subscription(
             Float64, '/mavros/global_position/relative_alt',
             self.relative_alt_callback, sensor_qos
+        )
+        
+        # Spray completion signal from sprayer node
+        self.create_subscription(
+            Bool, '/drone2/spray_done',
+            self.spray_done_callback, reliable_qos
         )
         
         # ================================================================
@@ -291,6 +298,13 @@ class Drone2NavigationNode(Node):
     def relative_alt_callback(self, msg: Float64):
         """Track relative altitude for takeoff detection (barometer-based)."""
         self.relative_altitude = msg.data
+    
+    def spray_done_callback(self, msg: Bool):
+        """Handle spray completion signal from sprayer node."""
+        if msg.data and self.state == FlightState.WAIT_SPRAY:
+            self.get_logger().info('Spray complete - ready for next target')
+            self.log('Spray operation completed')
+            self.transition_to(FlightState.WAIT_FOR_NEXT, 'Spray complete')
     
     def state_callback(self, msg: State):
         """Monitor FCU connection and mode."""
@@ -412,6 +426,9 @@ class Drone2NavigationNode(Node):
         
         elif self.state == FlightState.ARRIVED:
             self.handle_arrived()
+        
+        elif self.state == FlightState.WAIT_SPRAY:
+            self.handle_wait_spray()
         
         elif self.state == FlightState.WAIT_FOR_NEXT:
             self.handle_wait_for_next()
@@ -621,16 +638,31 @@ class Drone2NavigationNode(Node):
             self.transition_to(FlightState.ARRIVED, 'At target')
     
     def handle_arrived(self):
-        """Handle arrival at target."""
+        """Handle arrival at target - notify centering node and wait for spray."""
         self.targets_completed += 1
         self.get_logger().info(f'Arrived! Targets completed: {self.targets_completed}')
         
-        # Publish arrival
+        # Publish arrival → triggers Detection/Centering → then Sprayer
         msg = Bool()
         msg.data = True
         self.arrival_pub.publish(msg)
         
-        self.transition_to(FlightState.WAIT_FOR_NEXT, 'Published arrival')
+        # Wait for spray_done signal before looking for next target
+        self.transition_to(FlightState.WAIT_SPRAY, 'Waiting for centering + spray')
+    
+    def handle_wait_spray(self):
+        """Wait for centering and spray to complete."""
+        # Log progress every 5 seconds
+        if int(self.time_in_state()) % 5 == 0 and self.time_in_state() > 0:
+            self.get_logger().info(
+                f'[WAIT_SPRAY] Waiting for centering + spray... {int(self.time_in_state())}s'
+            )
+        
+        # Timeout after 60 seconds (centering ~30s + spray ~15s + buffer)
+        if self.time_in_state() > 60.0:
+            self.get_logger().warn('Spray timeout - continuing to next target')
+            self.log('Spray operation timed out after 60s')
+            self.transition_to(FlightState.WAIT_FOR_NEXT, 'Spray timeout')
     
     def handle_wait_for_next(self):
         """Wait at current position for next target, then RTL if timeout."""
@@ -688,7 +720,7 @@ class Drone2NavigationNode(Node):
         if self.state not in [
             FlightState.SET_GUIDED, FlightState.ARM,
             FlightState.NAVIGATE, FlightState.ARRIVED,
-            FlightState.WAIT_FOR_NEXT
+            FlightState.WAIT_SPRAY, FlightState.WAIT_FOR_NEXT
         ]:
             return
         
@@ -711,7 +743,7 @@ class Drone2NavigationNode(Node):
             setpoint.pose.position.z = self.takeoff_alt
         
         elif self.state in [FlightState.NAVIGATE, FlightState.ARRIVED, 
-                           FlightState.WAIT_FOR_NEXT]:
+                           FlightState.WAIT_SPRAY, FlightState.WAIT_FOR_NEXT]:
             # Navigate to target
             if self.target_local:
                 setpoint.pose.position.x = self.target_local[0]

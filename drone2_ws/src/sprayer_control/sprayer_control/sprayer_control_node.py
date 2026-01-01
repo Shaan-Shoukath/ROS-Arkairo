@@ -5,15 +5,18 @@
 """
 Sprayer Control Node
 
-Controls spray actuation via PWM output (simulation) or MAVROS servo command (hardware).
+Controls spray actuation via:
+  - Pi 5 GPIO (default/recommended) - Direct relay control
+  - PWM topic (SITL testing)
+  - MAVROS servo (FC relay)
+
 Includes priming delay before spray activation.
 
 State Machine:
     IDLE → spray_ready=True → PRIMING (delay) → SPRAYING → DONE → IDLE
 
-Modes:
-    - use_sim=true: Publishes to /drone2/pwm_spray topic (SITL testing)
-    - use_sim=false: Uses MAV_CMD_DO_SET_SERVO via MAVROS (hardware relay)
+Data Flow:
+    Navigation (arrives) → Detection/Centering (centers) → spray_ready → Sprayer
 
 Subscribers:
     /drone2/spray_ready (std_msgs/Bool): Spray activation trigger
@@ -35,6 +38,13 @@ from std_msgs.msg import Bool, UInt16
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandLong
 
+# Try to import gpiozero for Pi 5 GPIO control
+try:
+    from gpiozero import OutputDevice
+    HAS_GPIO = True
+except ImportError:
+    HAS_GPIO = False
+
 
 class SprayState(Enum):
     """Sprayer state machine states."""
@@ -55,10 +65,20 @@ class SprayerControlNode(Node):
         # ================================================================
         # PARAMETERS
         # ================================================================
-        # PWM settings
+        # Control mode: 'gpio' (Pi 5), 'pwm' (simulation), 'mavros' (FC servo)
+        self.declare_parameter('control_mode', 'gpio')  # Default: Pi GPIO
+        
+        # GPIO settings (Pi 5)
+        self.declare_parameter('gpio_pin', 17)  # BCM pin number
+        self.declare_parameter('gpio_active_high', True)  # True = relay activates on HIGH
+        
+        # PWM settings (simulation)
         self.declare_parameter('pwm_channel', 9)
         self.declare_parameter('pwm_off', 1000)
         self.declare_parameter('pwm_on', 2000)
+        
+        # MAVROS settings (FC relay)
+        self.declare_parameter('servo_channel', 10)
         
         # Spray timing
         self.declare_parameter('spray_duration_sec', 5.0)
@@ -69,21 +89,47 @@ class SprayerControlNode(Node):
         self.declare_parameter('require_guided', True)
         self.declare_parameter('min_altitude_m', 2.0)
         
-        # Hardware vs Simulation
-        self.declare_parameter('use_sim', True)
-        self.declare_parameter('servo_channel', 10)  # ArduPilot servo channel for hardware
+        # Legacy compatibility
+        self.declare_parameter('use_sim', True)  # Deprecated, use control_mode instead
         
         # Get parameters
+        self.control_mode = self.get_parameter('control_mode').value
+        self.gpio_pin = self.get_parameter('gpio_pin').value
+        self.gpio_active_high = self.get_parameter('gpio_active_high').value
         self.pwm_channel = self.get_parameter('pwm_channel').value
         self.pwm_off = self.get_parameter('pwm_off').value
         self.pwm_on = self.get_parameter('pwm_on').value
+        self.servo_channel = self.get_parameter('servo_channel').value
         self.spray_duration = self.get_parameter('spray_duration_sec').value
         self.spray_start_delay = self.get_parameter('spray_start_delay_sec').value
         self.require_armed = self.get_parameter('require_armed').value
         self.require_guided = self.get_parameter('require_guided').value
         self.min_alt = self.get_parameter('min_altitude_m').value
-        self.use_sim = self.get_parameter('use_sim').value
-        self.servo_channel = self.get_parameter('servo_channel').value
+        
+        # Handle legacy use_sim parameter
+        use_sim = self.get_parameter('use_sim').value
+        if use_sim and self.control_mode == 'gpio':
+            self.control_mode = 'pwm'  # Override to PWM for SITL compatibility
+        
+        # ================================================================
+        # GPIO INITIALIZATION
+        # ================================================================
+        self.relay = None
+        if self.control_mode == 'gpio':
+            if HAS_GPIO:
+                try:
+                    self.relay = OutputDevice(
+                        self.gpio_pin, 
+                        active_high=self.gpio_active_high,
+                        initial_value=False  # Start OFF
+                    )
+                    self.get_logger().info(f'GPIO initialized: pin {self.gpio_pin}')
+                except Exception as e:
+                    self.get_logger().error(f'GPIO init failed: {e}')
+                    self.control_mode = 'pwm'  # Fallback to PWM
+            else:
+                self.get_logger().warn('gpiozero not available, falling back to PWM mode')
+                self.control_mode = 'pwm'
         
         # ================================================================
         # STATE VARIABLES
@@ -135,7 +181,7 @@ class SprayerControlNode(Node):
         )
         
         # ================================================================
-        # SERVICE CLIENTS (for hardware mode)
+        # SERVICE CLIENTS (for MAVROS mode)
         # ================================================================
         self.command_client = self.create_client(CommandLong, '/mavros/cmd/command')
         
@@ -150,14 +196,19 @@ class SprayerControlNode(Node):
         # ================================================================
         # LOGGING
         # ================================================================
-        mode_str = 'SIMULATION (PWM topic)' if self.use_sim else f'HARDWARE (servo {self.servo_channel})'
+        mode_desc = {
+            'gpio': f'Pi GPIO (pin {self.gpio_pin})',
+            'pwm': 'PWM topic (simulation)',
+            'mavros': f'MAVROS servo (channel {self.servo_channel})'
+        }
         self.get_logger().info('=' * 50)
         self.get_logger().info('Sprayer Control Node initialized')
         self.get_logger().info('=' * 50)
-        self.get_logger().info(f'  Mode: {mode_str}')
+        self.get_logger().info(f'  Mode: {mode_desc.get(self.control_mode, self.control_mode)}')
         self.get_logger().info(f'  Priming delay: {self.spray_start_delay}s')
         self.get_logger().info(f'  Spray duration: {self.spray_duration}s')
-        self.get_logger().info(f'  PWM: {self.pwm_off} (off) -> {self.pwm_on} (on)')
+        if self.control_mode == 'pwm':
+            self.get_logger().info(f'  PWM: {self.pwm_off} (off) -> {self.pwm_on} (on)')
     
     # ====================================================================
     # CALLBACKS
@@ -241,19 +292,37 @@ class SprayerControlNode(Node):
     
     def _set_spray_output(self, on: bool):
         """
-        Set spray output - either via PWM topic (sim) or MAVROS servo (hardware).
+        Set spray output based on control mode.
+        
+        Modes:
+            - gpio: Direct Pi 5 GPIO relay control (fastest, recommended)
+            - pwm: Publish to PWM topic (SITL testing)
+            - mavros: MAVROS servo command (FC relay)
         
         Args:
             on: True to activate spray, False to deactivate
         """
-        pwm_value = self.pwm_on if on else self.pwm_off
-        
-        if self.use_sim:
-            # Simulation mode: publish to PWM topic
+        if self.control_mode == 'gpio':
+            self._set_gpio(on)
+        elif self.control_mode == 'pwm':
+            pwm_value = self.pwm_on if on else self.pwm_off
             self._set_pwm_topic(pwm_value)
-        else:
-            # Hardware mode: send MAVROS servo command
+        elif self.control_mode == 'mavros':
+            pwm_value = self.pwm_on if on else self.pwm_off
             self._set_servo_command(pwm_value)
+    
+    def _set_gpio(self, on: bool):
+        """Control relay via Pi 5 GPIO."""
+        if self.relay is None:
+            self.get_logger().error('GPIO not initialized')
+            return
+        
+        if on:
+            self.relay.on()
+            self.get_logger().debug(f'GPIO {self.gpio_pin}: ON')
+        else:
+            self.relay.off()
+            self.get_logger().debug(f'GPIO {self.gpio_pin}: OFF')
     
     def _set_pwm_topic(self, value: int):
         """Publish PWM value to topic (simulation mode)."""
@@ -333,8 +402,14 @@ class SprayerControlNode(Node):
         self.done_pub.publish(msg)
     
     def destroy_node(self):
-        """Ensure sprayer is off on shutdown."""
+        """Ensure sprayer is off and clean up GPIO on shutdown."""
         self._set_spray_output(False)
+        
+        # Close GPIO relay if initialized
+        if self.relay is not None:
+            self.relay.close()
+            self.get_logger().debug('GPIO relay closed')
+        
         super().destroy_node()
 
 

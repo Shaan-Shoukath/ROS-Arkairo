@@ -23,7 +23,7 @@ This directory contains detailed developer documentation for all Drone-1 ROS2 no
 
 - **[04 - Detection and Geotag Node](./04_DETECTION_AND_GEOTAG_NODE.md)**
 
-  - Yellow disease detection + GPS geotagging
+  - Yellow disease detection + GPS geotagging (simplified - uses current GPS)
   - Package: `detection_and_geotag`
 
 - **[05 - Telemetry TX Node](./05_TELEM_TX_NODE.md)**
@@ -35,7 +35,7 @@ This directory contains detailed developer documentation for all Drone-1 ROS2 no
 ```
 KML File → Lane Planner → Navigation → Drone Flight
                               ↓
-Camera → Image Capture → Detection → Geotag → Telem TX → [Radio] → Drone-2
+Camera → Image Capture → Detection → Geotag (current GPS) → Telem TX → [Radio] → Drone-2
 ```
 
 ## Quick Reference
@@ -47,6 +47,20 @@ Camera → Image Capture → Detection → Geotag → Telem TX → [Radio] → D
 | **image_capture**        | Camera feed       | `/camera/image_raw`, `/camera/camera_info`                  |
 | **detection_and_geotag** | Disease detection | `/camera/image_raw` → `/drone1/disease_geotag`              |
 | **telem_tx**             | Radio TX          | `/drone1/disease_geotag` → `/mavros/debug_value/send`       |
+
+## Recent Changes (Jan 2026)
+
+### Simplified Geotagging
+
+The detection node now uses **current drone GPS** when disease is detected, replacing complex ray-casting:
+
+```python
+# Old: Ray-casting from pixel to GPS (complex, error-prone)
+# New: Simply use drone's current GPS position
+return self.current_gps.latitude, self.current_gps.longitude
+```
+
+**Why?** Drone-2's visual servoing provides precision centering - Drone-1 just needs to be "close enough" (~5m).
 
 ## Documentation Structure
 
@@ -84,5 +98,6 @@ Each node document includes:
 
 ---
 
-**Last Updated**: December 31, 2025  
-**Maintained by**: Shaan Shoukath
+**Last Updated**: January 1, 2026  
+**Maintained by**: Shaan Shoukath  
+**⚠️ Changes**: Simplified geotagging (uses current GPS), HSV calibration updated

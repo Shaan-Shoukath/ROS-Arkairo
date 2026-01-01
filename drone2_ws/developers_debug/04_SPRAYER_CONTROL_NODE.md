@@ -34,43 +34,65 @@ Safe spray pump controller with priming:
        IDLE
 ```
 
-## Modes: Simulation vs Hardware
+## Modes: FC Relay vs Simulation
 
-### Simulation Mode (`use_sim: true` - default)
+### FC Relay Mode (`control_mode: mavros` - default)
+
+- Sends `MAV_CMD_DO_SET_RELAY` command via MAVROS to Orange Cube+
+- Direct control of ArduPilot relay output
+- **Recommended for real hardware**
+
+**ArduPilot Configuration**:
+
+```
+RELAY_PIN = 54           # AUX5 pin (or 50-57 for AUX1-8)
+RELAY_DEFAULT = 0        # Start OFF
+```
+
+**Wiring**:
+
+```
+Orange Cube+ AUX5 Pin
+    ├── Signal → Relay Signal IN
+    ├── +5V → Relay VCC
+    └── GND → Relay GND
+```
+
+### Simulation Mode (`control_mode: pwm`)
 
 - Publishes PWM value to `/drone2/pwm_spray` topic
 - For SITL testing and development
-- Launch: `ros2 launch drone2_bringup drone2_sprayer.launch.py use_sim:=true`
+- Automatically enabled when `use_sim: true`
 
-### Hardware Mode (`use_sim: false`)
+### GPIO Mode (`control_mode: gpio`)
 
-- Sends `MAV_CMD_DO_SET_SERVO` command via MAVROS
-- Direct control of ArduPilot servo output (relay)
-- Launch: `ros2 launch drone2_bringup drone2_sprayer.launch.py use_sim:=false`
-
-**ArduPilot Configuration for Hardware Mode**:
-
-```
-SERVO10_FUNCTION = 0     # Passthrough (ROS control)
-SERVO10_MIN = 1000       # PWM minimum
-SERVO10_MAX = 2000       # PWM maximum
-SERVO10_TRIM = 1000      # Default OFF
-```
+- Direct Pi 5 GPIO pin control (alternative)
+- Requires `gpiozero` library on Pi
 
 ## Parameters
 
-| Parameter               | Default | Description                                 |
-| ----------------------- | ------- | ------------------------------------------- |
-| `use_sim`               | true    | Simulation mode (PWM topic vs MAVROS servo) |
-| `spray_start_delay_sec` | 2.5     | Priming delay before pump activates         |
-| `spray_duration_sec`    | 5.0     | How long to spray                           |
-| `servo_channel`         | 10      | ArduPilot servo channel (hardware mode)     |
-| `pwm_channel`           | 9       | PWM channel for sim mode                    |
-| `pwm_off`               | 1000    | Pulse width for OFF (µs)                    |
-| `pwm_on`                | 2000    | Pulse width for ON (µs)                     |
-| `require_armed`         | true    | Must be armed to spray                      |
-| `require_guided`        | true    | Must be in GUIDED mode                      |
-| `min_altitude_m`        | 2.0     | Minimum safe altitude                       |
+| Parameter               | Default | Description                                     |
+| ----------------------- | ------- | ----------------------------------------------- |
+| **Control Mode**        |         |                                                 |
+| `control_mode`          | mavros  | `mavros` (FC), `gpio` (Pi 5), or `pwm` (sim)    |
+| `use_sim`               | true    | Auto-switches to PWM mode for SITL              |
+| **MAVROS/FC Settings**  |         |                                                 |
+| `relay_channel`         | 0       | Relay instance (0 = Relay1)                     |
+| `use_relay_command`     | true    | Use DO_SET_RELAY (true) or DO_SET_SERVO (false) |
+| `servo_channel`         | 9       | AUX servo channel (if use_relay_command=false)  |
+| **Timing**              |         |                                                 |
+| `spray_start_delay_sec` | 2.5     | Priming delay before pump activates             |
+| `spray_duration_sec`    | 5.0     | How long to spray                               |
+| **PWM Settings**        |         |                                                 |
+| `pwm_off`               | 1000    | Pulse width for OFF (µs)                        |
+| `pwm_on`                | 2000    | Pulse width for ON (µs)                         |
+| **Safety**              |         |                                                 |
+| `require_armed`         | true    | Must be armed to spray                          |
+| `require_guided`        | true    | Must be in GUIDED mode                          |
+| `min_altitude_m`        | 2.0     | Minimum safe altitude                           |
+| **GPIO Settings**       |         |                                                 |
+| `gpio_pin`              | 17      | BCM pin (if control_mode=gpio)                  |
+| `gpio_active_high`      | true    | Relay polarity                                  |
 
 ## Subscribers
 
@@ -203,5 +225,5 @@ ros2 topic pub --once /drone2/spray_ready std_msgs/msg/Bool "data: true"
 
 ---
 
-**Last Updated**: December 31, 2025  
+**Last Updated**: January 1, 2026  
 **Safety Critical**: Review all parameters before field deployment!

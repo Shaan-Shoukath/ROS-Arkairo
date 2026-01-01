@@ -25,7 +25,7 @@ This directory contains detailed developer documentation for all Drone-2 ROS2 no
   - Spray pump control with safety checks
   - Package: `sprayer_control`
 
-## System Architecture (NEW - Unified)
+## System Architecture (Updated Jan 2026)
 
 ```
 Drone-1 Radio → Telem RX → Navigation → ARM/TAKEOFF/FLY
@@ -36,14 +36,33 @@ Drone-1 Radio → Telem RX → Navigation → ARM/TAKEOFF/FLY
                                 ↓
                            Spray Ready
                                 ↓
-                        Sprayer Control
+                        Sprayer Control → FC Relay (MAVROS)
                                 ↓
-                          Spray Complete
+                          Spray Done
                                 ↓
-                    Navigation (wait/next target)
+                    Navigation (WAIT_SPRAY → WAIT_FOR_NEXT)
 ```
 
 ## 🚨 Important Changes
+
+### WAIT_SPRAY State (Jan 2026)
+
+Navigation now waits for spray completion before looking for next target:
+
+```
+ARRIVED → WAIT_SPRAY (waits for spray_done) → WAIT_FOR_NEXT → RTL
+```
+
+### FC Relay Control (Jan 2026)
+
+Sprayer now controls relay via Orange Cube+ FC using `MAV_CMD_DO_SET_RELAY`:
+
+```
+ArduPilot Setup:
+  RELAY1_PIN = 54 (AUX5)
+  RELAY1_DEFAULT = 0
+  RELAY1_FUNCTION = 1
+```
 
 ### Unified Navigation (Dec 2025)
 
@@ -80,12 +99,12 @@ The separate `local_detection` and `centering_controller` nodes have been **merg
 
 ## Quick Reference
 
-| Node                       | Purpose                | Key Topics                                                    |
-| -------------------------- | ---------------------- | ------------------------------------------------------------- |
-| **telem_rx**               | Receive targets        | `/mavros/debug_value/recv` → `/drone2/target_position`        |
-| **drone2_navigation** ⚡   | Unified flight control | `/drone2/target_position` → `/mavros/setpoint_position/local` |
-| **detection_centering** ⚡ | Find & center disease  | `/drone2/arrival_status` → `/drone2/spray_ready`              |
-| **sprayer_control**        | Pump actuation         | `/drone2/spray_ready` → `/drone2/spray_done`                  |
+| Node                       | Purpose                | Key Topics                                             |
+| -------------------------- | ---------------------- | ------------------------------------------------------ |
+| **telem_rx**               | Receive targets        | `/mavros/debug_value/recv` → `/drone2/target_position` |
+| **drone2_navigation** ⚡   | Unified flight control | `/drone2/target_position` → `/drone2/arrival_status`   |
+| **detection_centering** ⚡ | Find & center disease  | `/drone2/arrival_status` → `/drone2/spray_ready`       |
+| **sprayer_control**        | FC relay actuation     | `/drone2/spray_ready` → `/drone2/spray_done`           |
 
 ⚡ = Recently unified/merged nodes
 
@@ -110,10 +129,10 @@ Each node document includes:
 1. Drone-1 detects disease → Transmits GPS
 2. Telem RX receives → Validates → Publishes target
 3. Navigation receives target → ARMS → TAKEOFF → FLY to target
-4. Arrival at target → Triggers detection/centering
-5. Detection finds disease → Centers drone
-6. Spray ready → Activates pump
-7. Spray complete → Navigation waits for next target (or RTL)
+4. Arrival at target → Publishes arrival_status → WAIT_SPRAY
+5. Detection/Centering finds disease → Centers drone → spray_ready
+6. Sprayer activates FC relay → Spray complete → spray_done
+7. Navigation receives spray_done → WAIT_FOR_NEXT → next target or RTL
 ```
 
 ## Getting Started
@@ -142,6 +161,6 @@ Each node document includes:
 
 ---
 
-**Last Updated**: December 31, 2025  
+**Last Updated**: January 1, 2026  
 **Maintained by**: Shaan Shoukath  
-**⚠️ Architecture updated**: Mission manager merged, detection merged
+**⚠️ Architecture updated**: WAIT_SPRAY state, FC relay via MAVROS, all nodes connected

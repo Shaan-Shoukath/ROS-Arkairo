@@ -65,10 +65,15 @@ class SprayerControlNode(Node):
         # ================================================================
         # PARAMETERS
         # ================================================================
-        # Control mode: 'gpio' (Pi 5), 'pwm' (simulation), 'mavros' (FC servo)
-        self.declare_parameter('control_mode', 'gpio')  # Default: Pi GPIO
+        # Control mode: 'mavros' (FC relay - recommended), 'gpio' (Pi 5), 'pwm' (simulation)
+        self.declare_parameter('control_mode', 'mavros')  # Default: FC relay via MAVROS
         
-        # GPIO settings (Pi 5)
+        # MAVROS/FC settings (Orange Cube+ relay)
+        self.declare_parameter('servo_channel', 9)  # ArduPilot AUX output (e.g., AUX1=9)
+        self.declare_parameter('relay_channel', 0)  # Relay instance (0 = Relay1) for DO_SET_RELAY
+        self.declare_parameter('use_relay_command', True)  # True = DO_SET_RELAY, False = DO_SET_SERVO
+        
+        # GPIO settings (Pi 5 - alternative)
         self.declare_parameter('gpio_pin', 17)  # BCM pin number
         self.declare_parameter('gpio_active_high', True)  # True = relay activates on HIGH
         
@@ -76,9 +81,6 @@ class SprayerControlNode(Node):
         self.declare_parameter('pwm_channel', 9)
         self.declare_parameter('pwm_off', 1000)
         self.declare_parameter('pwm_on', 2000)
-        
-        # MAVROS settings (FC relay)
-        self.declare_parameter('servo_channel', 10)
         
         # Spray timing
         self.declare_parameter('spray_duration_sec', 5.0)
@@ -94,12 +96,14 @@ class SprayerControlNode(Node):
         
         # Get parameters
         self.control_mode = self.get_parameter('control_mode').value
+        self.servo_channel = self.get_parameter('servo_channel').value
+        self.relay_channel = self.get_parameter('relay_channel').value
+        self.use_relay_command = self.get_parameter('use_relay_command').value
         self.gpio_pin = self.get_parameter('gpio_pin').value
         self.gpio_active_high = self.get_parameter('gpio_active_high').value
         self.pwm_channel = self.get_parameter('pwm_channel').value
         self.pwm_off = self.get_parameter('pwm_off').value
         self.pwm_on = self.get_parameter('pwm_on').value
-        self.servo_channel = self.get_parameter('servo_channel').value
         self.spray_duration = self.get_parameter('spray_duration_sec').value
         self.spray_start_delay = self.get_parameter('spray_start_delay_sec').value
         self.require_armed = self.get_parameter('require_armed').value
@@ -108,7 +112,7 @@ class SprayerControlNode(Node):
         
         # Handle legacy use_sim parameter
         use_sim = self.get_parameter('use_sim').value
-        if use_sim and self.control_mode == 'gpio':
+        if use_sim and self.control_mode == 'mavros':
             self.control_mode = 'pwm'  # Override to PWM for SITL compatibility
         
         # ================================================================
@@ -295,21 +299,20 @@ class SprayerControlNode(Node):
         Set spray output based on control mode.
         
         Modes:
-            - gpio: Direct Pi 5 GPIO relay control (fastest, recommended)
+            - mavros: FC relay via MAVROS (recommended for Orange Cube+)
+            - gpio: Direct Pi 5 GPIO relay control
             - pwm: Publish to PWM topic (SITL testing)
-            - mavros: MAVROS servo command (FC relay)
         
         Args:
             on: True to activate spray, False to deactivate
         """
-        if self.control_mode == 'gpio':
+        if self.control_mode == 'mavros':
+            self._set_mavros_relay(on)
+        elif self.control_mode == 'gpio':
             self._set_gpio(on)
         elif self.control_mode == 'pwm':
             pwm_value = self.pwm_on if on else self.pwm_off
             self._set_pwm_topic(pwm_value)
-        elif self.control_mode == 'mavros':
-            pwm_value = self.pwm_on if on else self.pwm_off
-            self._set_servo_command(pwm_value)
     
     def _set_gpio(self, on: bool):
         """Control relay via Pi 5 GPIO."""
@@ -331,12 +334,15 @@ class SprayerControlNode(Node):
         self.pwm_pub.publish(msg)
         self.get_logger().debug(f'PWM topic: {value}')
     
-    def _set_servo_command(self, pwm_value: int):
+    def _set_mavros_relay(self, on: bool):
         """
-        Send MAV_CMD_DO_SET_SERVO via MAVROS (hardware mode).
+        Control relay via Orange Cube+ FC using MAVROS.
         
-        ArduPilot servo function: The servo_channel parameter should correspond
-        to a servo configured with SERVOx_FUNCTION = 0 (passthrough).
+        Uses DO_SET_RELAY (simpler, recommended) or DO_SET_SERVO based on config.
+        
+        ArduPilot Setup Required:
+            RELAY_PIN = 54 (AUX5) or appropriate AUX pin
+            RELAY_DEFAULT = 0
         """
         if not self.command_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().error('MAVROS command service not available')
@@ -344,31 +350,48 @@ class SprayerControlNode(Node):
         
         request = CommandLong.Request()
         request.broadcast = False
-        request.command = self.MAV_CMD_DO_SET_SERVO
         request.confirmation = 0
-        request.param1 = float(self.servo_channel)  # Servo instance number
-        request.param2 = float(pwm_value)           # PWM value (1000-2000)
-        request.param3 = 0.0
-        request.param4 = 0.0
-        request.param5 = 0.0
-        request.param6 = 0.0
-        request.param7 = 0.0
+        
+        if self.use_relay_command:
+            # MAV_CMD_DO_SET_RELAY (181) - simpler for relay control
+            request.command = 181  # MAV_CMD_DO_SET_RELAY
+            request.param1 = float(self.relay_channel)  # Relay instance (0 = Relay1)
+            request.param2 = 1.0 if on else 0.0         # 1 = ON, 0 = OFF
+            request.param3 = 0.0
+            request.param4 = 0.0
+            request.param5 = 0.0
+            request.param6 = 0.0
+            request.param7 = 0.0
+            
+            state_str = 'ON' if on else 'OFF'
+            self.get_logger().info(f'Relay command: relay={self.relay_channel} → {state_str}')
+        else:
+            # MAV_CMD_DO_SET_SERVO (183) - PWM-based control
+            pwm_value = self.pwm_on if on else self.pwm_off
+            request.command = self.MAV_CMD_DO_SET_SERVO
+            request.param1 = float(self.servo_channel)  # Servo instance number
+            request.param2 = float(pwm_value)           # PWM value (1000-2000)
+            request.param3 = 0.0
+            request.param4 = 0.0
+            request.param5 = 0.0
+            request.param6 = 0.0
+            request.param7 = 0.0
+            
+            self.get_logger().info(f'Servo command: channel={self.servo_channel}, PWM={pwm_value}')
         
         future = self.command_client.call_async(request)
-        future.add_done_callback(self._servo_command_callback)
-        
-        self.get_logger().info(f'Servo command: channel={self.servo_channel}, PWM={pwm_value}')
+        future.add_done_callback(self._mavros_command_callback)
     
-    def _servo_command_callback(self, future):
-        """Handle servo command response."""
+    def _mavros_command_callback(self, future):
+        """Handle MAVROS command response."""
         try:
             response = future.result()
             if response.success:
-                self.get_logger().debug('Servo command accepted')
+                self.get_logger().debug('MAVROS command accepted')
             else:
-                self.get_logger().warn(f'Servo command failed: result={response.result}')
+                self.get_logger().warn(f'MAVROS command failed: result={response.result}')
         except Exception as e:
-            self.get_logger().error(f'Servo command error: {e}')
+            self.get_logger().error(f'MAVROS command error: {e}')
     
     # ====================================================================
     # SAFETY & HELPERS

@@ -41,10 +41,19 @@ New targets can be received in **any flight state**:
 
 ```
 IDLE → WAIT_FCU → WAIT_TARGET → SET_GUIDED → ARM → TAKEOFF →
-WAIT_TAKEOFF → NAVIGATE → ARRIVED → WAIT_FOR_NEXT → [NAVIGATE or RTL]
-                              ↑___________________________|
-                    (new geotag during RTL resumes here)
+WAIT_TAKEOFF → NAVIGATE → ARRIVED → WAIT_SPRAY → WAIT_FOR_NEXT → [NAVIGATE or RTL]
+                               │         ↑
+                               │    spray_done
+                               └──────────────────────────────────────────────────┐
+                     (new geotag during RTL resumes here)                         │
 ```
+
+### WAIT_SPRAY State (NEW)
+
+- After ARRIVED, publishes `/drone2/arrival_status`
+- Waits for `/drone2/spray_done` from Sprayer node
+- Timeout: 60 seconds (centering + spray time)
+- Then transitions to WAIT_FOR_NEXT
 
 ## Core Logic
 
@@ -95,13 +104,14 @@ def handle_wait_for_next(self):
 
 ## Subscribers
 
-| Topic                                  | Type        | Source   | Purpose                        |
-| -------------------------------------- | ----------- | -------- | ------------------------------ |
-| `/drone2/target_position`              | NavSatFix   | telem_rx | GPS targets from Drone-1       |
-| `/mavros/state`                        | State       | MAVROS   | FCU connection/mode            |
-| `/mavros/global_position/global`       | NavSatFix   | MAVROS   | Current GPS, home capture      |
-| `/mavros/local_position/pose`          | PoseStamped | MAVROS   | Local position for navigation  |
-| `/mavros/global_position/relative_alt` | Float64     | MAVROS   | Barometer altitude for takeoff |
+| Topic                                  | Type        | Source          | Purpose                        |
+| -------------------------------------- | ----------- | --------------- | ------------------------------ |
+| `/drone2/target_position`              | NavSatFix   | telem_rx        | GPS targets from Drone-1       |
+| `/drone2/spray_done`                   | Bool        | sprayer_control | Spray completion signal (NEW)  |
+| `/mavros/state`                        | State       | MAVROS          | FCU connection/mode            |
+| `/mavros/global_position/global`       | NavSatFix   | MAVROS          | Current GPS, home capture      |
+| `/mavros/local_position/pose`          | PoseStamped | MAVROS          | Local position for navigation  |
+| `/mavros/global_position/relative_alt` | Float64     | MAVROS          | Barometer altitude for takeoff |
 
 ## Publishers
 
@@ -194,6 +204,7 @@ State: WAIT_FOR_NEXT → RTL (Wait timeout)
 - [x] Navigates to target
 - [x] Accepts new targets during NAVIGATE (redirects)
 - [x] Publishes arrival status
+- [x] WAIT_SPRAY - waits for spray_done signal (NEW)
 - [x] Hovers with countdown during WAIT_FOR_NEXT
 - [x] RTL if timeout
 - [x] Resumes navigation if geotag received during RTL
@@ -208,8 +219,9 @@ State: WAIT_FOR_NEXT → RTL (Wait timeout)
 | Premature RTL          | wait_timeout too short | Increase in config                              |
 | No redirect mid-flight | Old code               | Use updated node with all-state target handling |
 | Stuck after RTL resume | Mode not GUIDED        | handle_navigate requests GUIDED automatically   |
+| Stuck in WAIT_SPRAY    | Sprayer not running    | Check sprayer_control node is launched          |
 
 ---
 
-**Last Updated**: December 31, 2025  
-**Note**: Unified node with dynamic target acceptance and resumable RTL.
+**Last Updated**: January 1, 2026  
+**Note**: Unified node with dynamic target acceptance, WAIT_SPRAY, and resumable RTL.

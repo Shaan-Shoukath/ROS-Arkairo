@@ -5,7 +5,15 @@
 """
 Sprayer Control Node
 
-Controls spray actuation via PWM output with safety checks.
+Controls spray actuation via PWM output (simulation) or MAVROS servo command (hardware).
+Includes priming delay before spray activation.
+
+State Machine:
+    IDLE → spray_ready=True → PRIMING (delay) → SPRAYING → DONE → IDLE
+
+Modes:
+    - use_sim=true: Publishes to /drone2/pwm_spray topic (SITL testing)
+    - use_sim=false: Uses MAV_CMD_DO_SET_SERVO via MAVROS (hardware relay)
 
 Subscribers:
     /drone2/spray_ready (std_msgs/Bool): Spray activation trigger
@@ -13,9 +21,10 @@ Subscribers:
 
 Publishers:
     /drone2/spray_done (std_msgs/Bool): Spray operation complete
-    /drone2/pwm_spray (std_msgs/UInt16): PWM output value
+    /drone2/pwm_spray (std_msgs/UInt16): PWM output value (sim mode only)
 """
 
+from enum import Enum, auto
 from typing import Optional
 
 import rclpy
@@ -24,41 +33,71 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 from std_msgs.msg import Bool, UInt16
 from mavros_msgs.msg import State
+from mavros_msgs.srv import CommandLong
+
+
+class SprayState(Enum):
+    """Sprayer state machine states."""
+    IDLE = auto()
+    PRIMING = auto()  # Delay before spray activation
+    SPRAYING = auto()
 
 
 class SprayerControlNode(Node):
-    """ROS2 node for spray actuation control."""
+    """ROS2 node for spray actuation control with priming delay and hardware support."""
+    
+    # MAVLink command for servo control
+    MAV_CMD_DO_SET_SERVO = 183
     
     def __init__(self):
         super().__init__('sprayer_control_node')
         
-        # Declare parameters
+        # ================================================================
+        # PARAMETERS
+        # ================================================================
+        # PWM settings
         self.declare_parameter('pwm_channel', 9)
         self.declare_parameter('pwm_off', 1000)
         self.declare_parameter('pwm_on', 2000)
+        
+        # Spray timing
         self.declare_parameter('spray_duration_sec', 5.0)
+        self.declare_parameter('spray_start_delay_sec', 2.5)  # Priming delay
+        
+        # Safety
         self.declare_parameter('require_armed', True)
         self.declare_parameter('require_guided', True)
         self.declare_parameter('min_altitude_m', 2.0)
+        
+        # Hardware vs Simulation
+        self.declare_parameter('use_sim', True)
+        self.declare_parameter('servo_channel', 10)  # ArduPilot servo channel for hardware
         
         # Get parameters
         self.pwm_channel = self.get_parameter('pwm_channel').value
         self.pwm_off = self.get_parameter('pwm_off').value
         self.pwm_on = self.get_parameter('pwm_on').value
         self.spray_duration = self.get_parameter('spray_duration_sec').value
+        self.spray_start_delay = self.get_parameter('spray_start_delay_sec').value
         self.require_armed = self.get_parameter('require_armed').value
         self.require_guided = self.get_parameter('require_guided').value
         self.min_alt = self.get_parameter('min_altitude_m').value
+        self.use_sim = self.get_parameter('use_sim').value
+        self.servo_channel = self.get_parameter('servo_channel').value
         
-        # State
+        # ================================================================
+        # STATE VARIABLES
+        # ================================================================
+        self.state = SprayState.IDLE
         self.fc_state: Optional[State] = None
-        self.spraying = False
-        self.spray_start_time = None
+        self.state_start_time = None
         
         # Statistics
         self.total_sprays = 0
         
-        # QoS
+        # ================================================================
+        # QOS
+        # ================================================================
         reliable_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -71,7 +110,9 @@ class SprayerControlNode(Node):
             depth=1
         )
         
-        # Subscribers
+        # ================================================================
+        # SUBSCRIBERS
+        # ================================================================
         self.ready_sub = self.create_subscription(
             Bool, '/drone2/spray_ready',
             self.ready_callback, reliable_qos
@@ -82,7 +123,9 @@ class SprayerControlNode(Node):
             self.state_callback, sensor_qos
         )
         
-        # Publishers
+        # ================================================================
+        # PUBLISHERS
+        # ================================================================
         self.done_pub = self.create_publisher(
             Bool, '/drone2/spray_done', reliable_qos
         )
@@ -91,15 +134,34 @@ class SprayerControlNode(Node):
             UInt16, '/drone2/pwm_spray', 10
         )
         
-        # Spray control timer
+        # ================================================================
+        # SERVICE CLIENTS (for hardware mode)
+        # ================================================================
+        self.command_client = self.create_client(CommandLong, '/mavros/cmd/command')
+        
+        # ================================================================
+        # TIMERS
+        # ================================================================
         self.spray_timer = self.create_timer(0.1, self.spray_loop)
         
         # Ensure sprayer is off at start
-        self._set_pwm(self.pwm_off)
+        self._set_spray_output(False)
         
+        # ================================================================
+        # LOGGING
+        # ================================================================
+        mode_str = 'SIMULATION (PWM topic)' if self.use_sim else f'HARDWARE (servo {self.servo_channel})'
+        self.get_logger().info('=' * 50)
         self.get_logger().info('Sprayer Control Node initialized')
+        self.get_logger().info('=' * 50)
+        self.get_logger().info(f'  Mode: {mode_str}')
+        self.get_logger().info(f'  Priming delay: {self.spray_start_delay}s')
         self.get_logger().info(f'  Spray duration: {self.spray_duration}s')
         self.get_logger().info(f'  PWM: {self.pwm_off} (off) -> {self.pwm_on} (on)')
+    
+    # ====================================================================
+    # CALLBACKS
+    # ====================================================================
     
     def state_callback(self, msg: State):
         """Update flight controller state."""
@@ -110,8 +172,8 @@ class SprayerControlNode(Node):
         if not msg.data:
             return
         
-        if self.spraying:
-            self.get_logger().warn('Already spraying')
+        if self.state != SprayState.IDLE:
+            self.get_logger().warn(f'Spray request ignored - currently in {self.state.name}')
             return
         
         # Safety checks
@@ -120,26 +182,128 @@ class SprayerControlNode(Node):
             self._publish_done(False)
             return
         
-        # Start spraying
-        self.spraying = True
-        self.spray_start_time = self.get_clock().now()
-        self._set_pwm(self.pwm_on)
-        self.total_sprays += 1
-        
-        self.get_logger().info('Spraying started')
+        # Start priming phase
+        self._transition_to(SprayState.PRIMING)
+        self.get_logger().info(f'Priming delay started ({self.spray_start_delay}s)...')
+    
+    # ====================================================================
+    # STATE MACHINE
+    # ====================================================================
+    
+    def _transition_to(self, new_state: SprayState):
+        """Transition to a new state."""
+        old_state = self.state
+        self.state = new_state
+        self.state_start_time = self.get_clock().now()
+        self.get_logger().debug(f'State: {old_state.name} -> {new_state.name}')
+    
+    def _time_in_state(self) -> float:
+        """Get time elapsed in current state (seconds)."""
+        if self.state_start_time is None:
+            return 0.0
+        return (self.get_clock().now() - self.state_start_time).nanoseconds / 1e9
     
     def spray_loop(self):
-        """Monitor spray operation."""
-        if not self.spraying:
+        """Main state machine loop (10Hz)."""
+        
+        if self.state == SprayState.IDLE:
+            # Nothing to do
             return
         
-        # Check duration
-        elapsed = (self.get_clock().now() - self.spray_start_time).nanoseconds / 1e9
+        elif self.state == SprayState.PRIMING:
+            # Wait for priming delay
+            elapsed = self._time_in_state()
+            
+            if elapsed >= self.spray_start_delay:
+                # Priming complete - start spraying
+                self._set_spray_output(True)
+                self.total_sprays += 1
+                self._transition_to(SprayState.SPRAYING)
+                self.get_logger().info('Spraying started')
         
-        if elapsed >= self.spray_duration:
-            self._stop_spray()
-            self._publish_done(True)
-            self.get_logger().info(f'Spraying complete ({elapsed:.1f}s)')
+        elif self.state == SprayState.SPRAYING:
+            # Monitor spray duration
+            elapsed = self._time_in_state()
+            
+            if elapsed >= self.spray_duration:
+                # Spray complete
+                self._stop_spray()
+                self._publish_done(True)
+                total_time = self.spray_start_delay + self.spray_duration
+                self.get_logger().info(
+                    f'Spraying complete (priming: {self.spray_start_delay}s + '
+                    f'spray: {elapsed:.1f}s = {total_time:.1f}s total)'
+                )
+    
+    # ====================================================================
+    # SPRAY OUTPUT CONTROL
+    # ====================================================================
+    
+    def _set_spray_output(self, on: bool):
+        """
+        Set spray output - either via PWM topic (sim) or MAVROS servo (hardware).
+        
+        Args:
+            on: True to activate spray, False to deactivate
+        """
+        pwm_value = self.pwm_on if on else self.pwm_off
+        
+        if self.use_sim:
+            # Simulation mode: publish to PWM topic
+            self._set_pwm_topic(pwm_value)
+        else:
+            # Hardware mode: send MAVROS servo command
+            self._set_servo_command(pwm_value)
+    
+    def _set_pwm_topic(self, value: int):
+        """Publish PWM value to topic (simulation mode)."""
+        msg = UInt16()
+        msg.data = value
+        self.pwm_pub.publish(msg)
+        self.get_logger().debug(f'PWM topic: {value}')
+    
+    def _set_servo_command(self, pwm_value: int):
+        """
+        Send MAV_CMD_DO_SET_SERVO via MAVROS (hardware mode).
+        
+        ArduPilot servo function: The servo_channel parameter should correspond
+        to a servo configured with SERVOx_FUNCTION = 0 (passthrough).
+        """
+        if not self.command_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().error('MAVROS command service not available')
+            return
+        
+        request = CommandLong.Request()
+        request.broadcast = False
+        request.command = self.MAV_CMD_DO_SET_SERVO
+        request.confirmation = 0
+        request.param1 = float(self.servo_channel)  # Servo instance number
+        request.param2 = float(pwm_value)           # PWM value (1000-2000)
+        request.param3 = 0.0
+        request.param4 = 0.0
+        request.param5 = 0.0
+        request.param6 = 0.0
+        request.param7 = 0.0
+        
+        future = self.command_client.call_async(request)
+        future.add_done_callback(self._servo_command_callback)
+        
+        self.get_logger().info(f'Servo command: channel={self.servo_channel}, PWM={pwm_value}')
+    
+    def _servo_command_callback(self, future):
+        """Handle servo command response."""
+        try:
+            response = future.result()
+            if response.success:
+                self.get_logger().debug('Servo command accepted')
+            else:
+                self.get_logger().warn(f'Servo command failed: result={response.result}')
+        except Exception as e:
+            self.get_logger().error(f'Servo command error: {e}')
+    
+    # ====================================================================
+    # SAFETY & HELPERS
+    # ====================================================================
     
     def _safety_check(self) -> bool:
         """Perform safety checks before spraying."""
@@ -157,16 +321,10 @@ class SprayerControlNode(Node):
         
         return True
     
-    def _set_pwm(self, value: int):
-        """Set PWM output value."""
-        msg = UInt16()
-        msg.data = value
-        self.pwm_pub.publish(msg)
-    
     def _stop_spray(self):
-        """Stop spraying."""
-        self.spraying = False
-        self._set_pwm(self.pwm_off)
+        """Stop spraying and return to IDLE."""
+        self._set_spray_output(False)
+        self._transition_to(SprayState.IDLE)
     
     def _publish_done(self, success: bool):
         """Publish spray done status."""
@@ -176,7 +334,7 @@ class SprayerControlNode(Node):
     
     def destroy_node(self):
         """Ensure sprayer is off on shutdown."""
-        self._set_pwm(self.pwm_off)
+        self._set_spray_output(False)
         super().destroy_node()
 
 
@@ -191,6 +349,7 @@ def main(args=None):
         node.get_logger().info(f'Total sprays: {node.total_sprays}')
         node.destroy_node()
         rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

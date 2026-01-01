@@ -6,10 +6,16 @@
     pwm_off: 1000
     pwm_on: 2000
 
-    # Spray duration
+    # Spray timing
     spray_duration_sec: 5.0
+    spray_start_delay_sec: 2.5   # Priming delay before pump activates
+
+    # Hardware vs Simulation
+    use_sim: true                # true = PWM topic, false = MAVROS servo command
+    servo_channel: 10            # ArduPilot servo channel (used when use_sim: false)
 
     # Safety
     require_armed: true
     require_guided: true
     min_altitude_m: 2.0
+

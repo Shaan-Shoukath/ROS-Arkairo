@@ -36,20 +36,23 @@ A production-grade ROS 2 dual-drone system for **fully autonomous** field survey
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Direct Telemetry Data Flow
+### Direct Telemetry Data Flow (Updated Jan 2026)
 
 ```
 Drone-1                                              Drone-2
 ┌─────────────────────┐                    ┌─────────────────────┐
 │ detection_and_      │                    │ telem_rx_node       │
 │ geotag_node         │                    │   ↓                 │
-│   ↓                 │                    │ gcs_to_d2_downlink  │
-│ /drone1/disease_    │    MAVLink         │   ↓                 │
-│ geotag              │    DEBUG_VALUE     │ /drone2/target_     │
-│   ↓                 │    (NAMED_VALUE_   │ position            │
-│ telem_tx_node       │═══════════════════►│ FLOAT type)         │
-│   ↓                 │    (d_lat,d_lon,   │   ↓                 │
-│ MAVROS              │     d_alt)         │ Navigation→Spray    │
+│ (uses current GPS)  │                    │ Validates coords    │
+│   ↓                 │                    │   ↓                 │
+│ /drone1/disease_    │    MAVLink         │ /drone2/target_     │
+│ geotag              │    DEBUG_VALUE     │ position            │
+│   ↓                 │    (NAMED_VALUE_   │   ↓                 │
+│ telem_tx_node       │═══════════════════►│ Navigation          │
+│   ↓                 │    FLOAT type)     │   ↓                 │
+│ MAVROS              │    (d_lat,d_lon,   │ Detection/Centering │
+│                     │     d_alt)         │   ↓                 │
+│                     │                    │ Sprayer (FC Relay)  │
 └─────────────────────┘                    └─────────────────────┘
 ```
 
@@ -90,13 +93,13 @@ Each document includes:
 
 ### Drone-1 (Survey System) - 5 Nodes
 
-| Node                     | Description                              | Quick Ref                                         | Dev Docs                                                                         |
-| ------------------------ | ---------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------- |
-| **KML Lane Planner**     | Converts KML boundaries to survey paths  | [📄 Package](drone1_ws/src/kml_lane_planner/)     | [📖 Developer Guide](drone1_ws/developers_debug/02_KML_LANE_PLANNER_NODE.md)     |
-| **Drone-1 Navigation**   | Executes survey waypoints via MAVROS     | [📄 Package](drone1_ws/src/drone1_navigation/)    | [📖 Developer Guide](drone1_ws/developers_debug/01_DRONE1_NAVIGATION_NODE.md)    |
-| **Image Capture**        | USB camera interface for survey          | [📄 Package](drone1_ws/src/image_capture/)        | [📖 Developer Guide](drone1_ws/developers_debug/03_IMAGE_CAPTURE_NODE.md)        |
-| **Detection & Geotag**   | Disease detection with GPS ray-casting   | [📄 Package](drone1_ws/src/detection_and_geotag/) | [📖 Developer Guide](drone1_ws/developers_debug/04_DETECTION_AND_GEOTAG_NODE.md) |
-| **Telemetry TX** _(NEW)_ | Transmits geotags over MAVLink telemetry | [📄 Package](drone1_ws/src/telem_tx/)             | [📖 Developer Guide](drone1_ws/developers_debug/05_TELEM_TX_NODE.md)             |
+| Node                     | Description                                | Quick Ref                                         | Dev Docs                                                                         |
+| ------------------------ | ------------------------------------------ | ------------------------------------------------- | -------------------------------------------------------------------------------- |
+| **KML Lane Planner**     | Converts KML boundaries to survey paths    | [📄 Package](drone1_ws/src/kml_lane_planner/)     | [📖 Developer Guide](drone1_ws/developers_debug/02_KML_LANE_PLANNER_NODE.md)     |
+| **Drone-1 Navigation**   | Executes survey waypoints via MAVROS       | [📄 Package](drone1_ws/src/drone1_navigation/)    | [📖 Developer Guide](drone1_ws/developers_debug/01_DRONE1_NAVIGATION_NODE.md)    |
+| **Image Capture**        | USB camera interface for survey            | [📄 Package](drone1_ws/src/image_capture/)        | [📖 Developer Guide](drone1_ws/developers_debug/03_IMAGE_CAPTURE_NODE.md)        |
+| **Detection & Geotag**   | Disease detection + GPS (uses current GPS) | [📄 Package](drone1_ws/src/detection_and_geotag/) | [📖 Developer Guide](drone1_ws/developers_debug/04_DETECTION_AND_GEOTAG_NODE.md) |
+| **Telemetry TX** _(NEW)_ | Transmits geotags over MAVLink telemetry   | [📄 Package](drone1_ws/src/telem_tx/)             | [📖 Developer Guide](drone1_ws/developers_debug/05_TELEM_TX_NODE.md)             |
 
 ### Drone-2 (Sprayer System) - 4 Nodes
 
@@ -105,7 +108,7 @@ Each document includes:
 | **Telemetry RX** _(NEW)_                | Receives geotags from telemetry            | [📄 Package](drone2_ws/src/telem_rx/)                      | [📖 Developer Guide](drone2_ws/developers_debug/01_TELEM_RX_NODE.md)               |
 | **Drone-2 Navigation** ⚡               | **Unified** autonomous controller          | [📄 Package](drone2_ws/src/drone2_navigation/)             | [📖 Developer Guide](drone2_ws/developers_debug/02_DRONE2_NAVIGATION_NODE.md) ⚡   |
 | **Detection & Centering** ⚡ _(MERGED)_ | **Combined** detection and visual servoing | [📄 Package](drone2_ws/src/local_detection_and_centering/) | [📖 Developer Guide](drone2_ws/developers_debug/03_DETECTION_CENTERING_NODE.md) ⚡ |
-| **Sprayer Control**                     | PWM actuation with safety checks           | [📄 Package](drone2_ws/src/sprayer_control/)               | [📖 Developer Guide](drone2_ws/developers_debug/04_SPRAYER_CONTROL_NODE.md)        |
+| **Sprayer Control**                     | FC relay via MAVROS + safety checks        | [📄 Package](drone2_ws/src/sprayer_control/)               | [📖 Developer Guide](drone2_ws/developers_debug/04_SPRAYER_CONTROL_NODE.md)        |
 
 > ⚡ **Architecture Note**: `mission_manager` was removed - functionality merged into `drone2_navigation` for simpler unified control
 
@@ -149,15 +152,17 @@ Watches the `missions/` folder for KML files defining field boundaries. When a n
 
 #### 🔬 Detection and Geotag Node
 
-Processes camera frames to detect crop disease (yellow spots) and compute GPS coordinates:
+Processes camera frames to detect crop disease (yellow spots) and records GPS coordinates:
 
-- Subscribes to camera images, GPS, IMU, and altitude data
+- Subscribes to camera images and GPS data
 - Performs HSV color thresholding to detect yellow disease patches
-- Converts pixel coordinates to GPS using ray-casting (IMU orientation + camera intrinsics)
+- **Uses current drone GPS** when disease is detected (simplified approach)
 - De-duplicates detections within configurable radius
 - Logs all detections to CSV file
 
-**Key Features**: Configurable HSV thresholds, severity classification, duplicate filtering, debug visualization
+**Key Features**: Configurable HSV thresholds (H:20-35, S:50-255, V:50-255), severity classification, duplicate filtering, debug visualization
+
+> ⚡ **Simplified (Jan 2026)**: Replaced complex ray-casting with current GPS - Drone-2's visual servoing provides final precision
 
 ---
 
@@ -200,14 +205,15 @@ Receives disease geotags from Drone-1 via MAVLink telemetry and dispatches to na
 - **Auto-arms and takes off** on first geotag (no manual intervention)
 - Navigates using `GlobalPositionTarget` via MAVROS
 - Monitors arrival using Haversine distance calculation
-- **5-second wait window** after spray completion for next target
+- **WAIT_SPRAY state** - waits for spray_done signal before continuing
+- **Configurable wait window** after spray for next target
 - **Auto-RTL** if no new target received within timeout
 
-**State Machine**: `IDLE → ARMING → TAKING_OFF → NAVIGATING → WAITING → RTL`
+**State Machine**: `IDLE → ARM → TAKEOFF → NAVIGATE → ARRIVED → WAIT_SPRAY → WAIT_FOR_NEXT → RTL`
 
-**Key Features**: Complete autonomous lifecycle, timeout protection, arrival detection, sequential target processing
+**Key Features**: Complete autonomous lifecycle, WAIT_SPRAY integration, timeout protection, arrival detection
 
-> ⚡ **Architecture Note**: Previously separate `mission_manager` functionality now integrated for cleaner state management
+> ⚡ **Updated (Jan 2026)**: Added WAIT_SPRAY state, listens to `/drone2/spray_done`
 
 ---
 
@@ -231,15 +237,25 @@ Receives disease geotags from Drone-1 via MAVLink telemetry and dispatches to na
 
 #### 💧 Sprayer Control Node
 
-Controls spray actuation via PWM output with safety checks:
+Controls spray actuation via Orange Cube+ FC relay with safety checks:
 
 - Subscribes to spray-ready signal from detection & centering
 - Validates safety conditions (armed, altitude, mode)
-- Activates relay via PWM (1000=OFF, 2000=ON)
+- **Activates FC relay via MAVROS** (`MAV_CMD_DO_SET_RELAY`)
 - Maintains spray for configured duration
-- Publishes completion status
+- Publishes completion status to `/drone2/spray_done`
 
-**Key Features**: Hardware safety interlocks, configurable duration, PWM output
+**Key Features**: FC relay control, hardware safety interlocks, configurable duration
+
+**ArduPilot Setup**:
+
+```
+RELAY1_PIN = 54        # AUX5
+RELAY1_DEFAULT = 0
+RELAY1_FUNCTION = 1
+```
+
+> ⚡ **Updated (Jan 2026)**: Changed from PWM topic to FC relay via MAVROS for direct Orange Cube+ control
 
 ---
 

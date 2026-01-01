@@ -211,5 +211,5 @@ State: WAIT_FOR_NEXT → RTL (Wait timeout)
 
 ---
 
-**Last Updated**: December 31, 2024  
+**Last Updated**: December 31, 2025  
 **Note**: Unified node with dynamic target acceptance and resumable RTL.

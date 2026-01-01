@@ -309,6 +309,42 @@ ros2 topic echo /mavros/debug_value/send
 
 **Handshake**: None required, fire-and-forget transmission
 
+## SITL Simulation Testing
+
+### Testing Without Radio Hardware
+
+You can test the node without physical telemetry radios:
+
+```bash
+# Terminal 1: Run the node (no MAVROS needed for basic test)
+ros2 run telem_tx telem_tx_node
+
+# Terminal 2: Send test geotag
+ros2 topic pub --once /drone1/disease_geotag geographic_msgs/msg/GeoPointStamped \
+  "{header: {frame_id: 'map'}, position: {latitude: 10.0478, longitude: 76.3303, altitude: 50.0}}"
+
+# Terminal 3: Monitor outgoing messages
+ros2 topic echo /mavros/debug_value/send
+```
+
+### Full SITL Test (with MAVROS)
+
+```bash
+# Terminal 1: ArduPilot SITL
+cd ~/ardupilot/ArduCopter
+sim_vehicle.py -v ArduCopter --console --map -l 10.0478,76.3303,0,0
+
+# Terminal 2: MAVROS
+ros2 launch mavros apm.launch.py fcu_url:=udp://:14550@127.0.0.1:14555
+
+# Terminal 3: Telem TX node
+ros2 run telem_tx telem_tx_node
+
+# Terminal 4: Simulate detections
+ros2 topic pub /drone1/disease_geotag geographic_msgs/msg/GeoPointStamped \
+  "{position: {latitude: 10.048, longitude: 76.331, altitude: 50.0}}" --once
+```
+
 ---
 
-**Last Updated**: December 30, 2025
+**Last Updated**: December 31, 2025

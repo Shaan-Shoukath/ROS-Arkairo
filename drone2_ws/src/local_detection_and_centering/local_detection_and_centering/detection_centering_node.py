@@ -77,6 +77,17 @@ class DetectionCenteringNode(Node):
         self.declare_parameter('centering_timeout_sec', 30.0)
         self.declare_parameter('control_rate_hz', 20.0)
         
+        # Camera offset from drone center (cm)
+        # Positive X = camera is RIGHT of center
+        # Positive Y = camera is FORWARD of center
+        self.declare_parameter('camera_offset_x_cm', 0.0)
+        self.declare_parameter('camera_offset_y_cm', 0.0)
+        
+        # Camera FOV and altitude for automatic calibration
+        self.declare_parameter('camera_hfov_deg', 62.2)  # Pi Camera 3 Wide horizontal FOV
+        self.declare_parameter('camera_vfov_deg', 48.8)  # Pi Camera 3 Wide vertical FOV
+        self.declare_parameter('centering_altitude_m', 3.0)  # Expected hover altitude during centering
+        
         # Detection params
         self.conf_thresh = self.get_parameter('confidence_threshold').value
         self.detection_timeout = self.get_parameter('detection_timeout_sec').value
@@ -95,9 +106,39 @@ class DetectionCenteringNode(Node):
         self.centering_timeout = self.get_parameter('centering_timeout_sec').value
         control_rate = self.get_parameter('control_rate_hz').value
         
-        # Image center
-        self.center_x = self.image_width / 2
-        self.center_y = self.image_height / 2
+        # Camera offset and calibration
+        cam_offset_x = self.get_parameter('camera_offset_x_cm').value
+        cam_offset_y = self.get_parameter('camera_offset_y_cm').value
+        hfov_deg = self.get_parameter('camera_hfov_deg').value
+        vfov_deg = self.get_parameter('camera_vfov_deg').value
+        altitude_m = self.get_parameter('centering_altitude_m').value
+        
+        # Calculate ground coverage at centering altitude
+        # ground_width = 2 * altitude * tan(hfov/2)
+        import math
+        hfov_rad = math.radians(hfov_deg)
+        vfov_rad = math.radians(vfov_deg)
+        ground_width_m = 2 * altitude_m * math.tan(hfov_rad / 2)
+        ground_height_m = 2 * altitude_m * math.tan(vfov_rad / 2)
+        
+        # pixels per cm = image_dimension / ground_dimension_cm
+        pixels_per_cm_x = self.image_width / (ground_width_m * 100)
+        pixels_per_cm_y = self.image_height / (ground_height_m * 100)
+        pixels_per_cm = (pixels_per_cm_x + pixels_per_cm_y) / 2  # Average
+        
+        # Calculate adjusted center (shift by camera offset)
+        # If camera is 5cm RIGHT of center, we need target at image center to end up 5cm LEFT in real world
+        # So we SHIFT the target point in the opposite direction
+        offset_x_pixels = cam_offset_x * pixels_per_cm_x
+        offset_y_pixels = cam_offset_y * pixels_per_cm_y
+        
+        self.center_x = (self.image_width / 2) - offset_x_pixels
+        self.center_y = (self.image_height / 2) - offset_y_pixels
+        
+        self.get_logger().info(f'Camera: FOV={hfov_deg}x{vfov_deg}deg, altitude={altitude_m}m')
+        self.get_logger().info(f'Ground coverage: {ground_width_m:.2f}x{ground_height_m:.2f}m ({pixels_per_cm:.1f} px/cm)')
+        self.get_logger().info(f'Camera offset: X={cam_offset_x}cm, Y={cam_offset_y}cm')
+        self.get_logger().info(f'Adjusted center: ({self.center_x:.1f}, {self.center_y:.1f})')
         
         # State machine
         self.state = State.IDLE
@@ -292,9 +333,9 @@ class DetectionCenteringNode(Node):
         """Detect disease in image. Returns bbox (x, y, w, h) or None."""
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         
-        # Look for brownish/yellowish disease spots
-        lower = np.array([10, 50, 50])
-        upper = np.array([30, 255, 200])
+        # Look for yellow disease (synced with Drone-1 range)
+        lower = np.array([20, 50, 50])   # H:20-35, S:50-255, V:50-255
+        upper = np.array([35, 255, 255])
         mask = cv2.inRange(hsv, lower, upper)
         
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)

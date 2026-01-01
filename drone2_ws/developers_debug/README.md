@@ -142,6 +142,6 @@ Each node document includes:
 
 ---
 
-**Last Updated**: December 30, 2025  
+**Last Updated**: December 31, 2025  
 **Maintained by**: Shaan Shoukath  
 **⚠️ Architecture updated**: Mission manager merged, detection merged

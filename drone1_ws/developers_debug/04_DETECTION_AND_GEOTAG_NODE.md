@@ -93,69 +93,21 @@ else:
 
 ## GPS Geotagging Algorithm
 
-### Ray-Casting Method
+### Simplified Approach (Current)
 
-**Problem**: Image pixel → Real-world GPS coordinates
-
-**Solution**: Cast ray from camera through pixel to ground
-
-**Steps**:
-
-1. **Get drone pose**: GPS position + IMU orientation
-2. **Pixel to camera ray**: Use camera intrinsics
-3. **Rotate ray**: Transform using drone orientation
-4. **Ray-ground intersection**: Solve for altitude = 0
-5. **Convert to GPS**: ECEF → WGS84 coordinates
-
-### Mathematical Breakdown
-
-**Step 1: Pixel to Camera Coordinates**
+**Method**: Use drone's current GPS position when disease is detected
 
 ```python
-x_cam = (pixel_x - cx) / fx
-y_cam = (pixel_y - cy) / fy
-z_cam = 1.0  # Normalized depth
-ray_camera = [x_cam, y_cam, z_cam]
+def _pixel_to_gps(self, px, py, frame_w, frame_h):
+    # Simply use the drone's current GPS position
+    return self.current_gps.latitude, self.current_gps.longitude
 ```
 
-**Built-in**: Division operator `/`
+**Why simplified?**
 
-**Step 2: Camera to Body Frame**
-
-```python
-R_camera_to_body = rotation_matrix(camera_roll, camera_pitch, camera_yaw)
-ray_body = R_camera_to_body @ ray_camera
-```
-
-**Built-in**: `@` matrix multiplication operator (Python 3.5+)
-
-**Step 3: Body to World Frame**
-
-```python
-R_body_to_world = rotation_from_quaternion(imu_orientation)
-ray_world = R_body_to_world @ ray_body
-```
-
-**Library**: `scipy.spatial.transform.Rotation` for quaternion math
-
-**Step 4: Ray-Ground Intersection**
-
-```python
-# Ray: P = drone_position + t * ray_world
-# Ground: Z = 0
-# Solve: drone_alt + t * ray_z = 0
-t = -drone_alt / ray_world.z
-target_x = drone_x + t * ray_world.x
-target_y = drone_y + t * ray_world.y
-```
-
-**Math**: Linear algebra ray-plane intersection
-
-**Step 5: ECEF to GPS**
-
-```python
-lat, lon = ecef_to_latlon(target_x, target_y, target_z)
-```
+- Drone-2's visual servoing handles precision centering (~3cm accuracy)
+- Drone-1 geotag only needs to be "close enough" (~5m from GPS)
+- Removes complexity: no IMU, no camera intrinsics, no ray-casting
 
 ### Deduplication System
 
@@ -449,6 +401,53 @@ For each contour:
 - Verify camera pitch = 90° (pointing straight down)
 - Confirm IMU orientation correct
 
+## Simulation Mode Testing
+
+### Detection Test Node (`detection_test_node.py`)
+
+A separate test node is available for calibration and testing without full flight stack:
+
+```bash
+# Build and source
+cd ~/Documents/ROSArkairo/drone1_ws
+colcon build --packages-select detection_and_geotag --symlink-install
+source install/setup.zsh
+
+# Simulation mode (mock GPS - no MAVROS needed)
+ros2 launch detection_and_geotag detection_test.launch.py use_sim:=true
+
+# Real mode (GPS from Orange Cube+ via MAVROS)
+ros2 launch detection_and_geotag detection_test.launch.py use_sim:=false
+
+# With live preview window (requires display)
+ros2 launch detection_and_geotag detection_test.launch.py use_sim:=true show_window:=true
+```
+
+### HSV Calibration (Headless - Ubuntu Server)
+
+```bash
+# Adjust yellow detection range via ROS2 params
+ros2 param set /detection_test_node yellow_h_min 20
+ros2 param set /detection_test_node yellow_h_max 45
+ros2 param set /detection_test_node yellow_s_min 100
+ros2 param set /detection_test_node yellow_v_min 100
+
+# Monitor detections
+ros2 topic echo /drone1/disease_geotag
+```
+
+**On shutdown**: Node prints final HSV values for copying to config.
+
+### Test Parameters (config/test_params.yaml)
+
+| Parameter        | Default   | Description                           |
+| ---------------- | --------- | ------------------------------------- |
+| `use_sim`        | `true`    | Mock GPS (true) or MAVROS GPS (false) |
+| `mock_latitude`  | `10.0478` | Base lat for simulation               |
+| `mock_longitude` | `76.3303` | Base lon for simulation               |
+| `mock_altitude`  | `15.0`    | Flight altitude for simulation        |
+| `show_gui`       | `false`   | OpenCV preview (requires display)     |
+
 ---
 
-**Last Updated**: December 30, 2025
+**Last Updated**: January 1, 2026

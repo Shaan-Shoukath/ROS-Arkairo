@@ -362,7 +362,44 @@ kml_lane_planner:
 **Issue**: Wrong coordinate order  
 **Solution**: KML uses lon,lat format (reversed from typical lat,lon)
 
+## SITL Simulation Testing
+
+### Quick Start
+
+```bash
+# Terminal 1: Start ArduPilot SITL
+cd ~/ardupilot/ArduCopter
+sim_vehicle.py -v ArduCopter --console --map -l 10.0478,76.3303,0,0 -w
+
+# Terminal 2: MAVROS (provides GPS for home position)
+ros2 launch mavros apm.launch.py fcu_url:=udp://:14550@127.0.0.1:14555
+
+# Terminal 3: Run planner
+cd ~/Documents/ROSArkairo/drone1_ws && source install/setup.zsh
+ros2 run kml_lane_planner kml_lane_planner_node
+```
+
+### Test KML File
+
+Place a test KML file in the missions folder. Example coordinates for testing near SITL home:
+
+```xml
+<coordinates>
+  76.3303,10.0478,0
+  76.3320,10.0478,0
+  76.3320,10.0495,0
+  76.3303,10.0495,0
+  76.3303,10.0478,0
+</coordinates>
+```
+
+### Monitor Output
+
+```bash
+ros2 topic echo /mission/lane_segments
+```
+
 ---
 
 **Maintained by**: Shaan Shoukath  
-**Last Updated**: December 30, 2025
+**Last Updated**: December 31, 2025

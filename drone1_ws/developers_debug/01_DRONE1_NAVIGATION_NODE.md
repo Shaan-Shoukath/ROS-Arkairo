@@ -291,7 +291,37 @@ def haversine_distance(lat1, lon1, lat2, lon2) -> float:
 **Issue**: Takeoff timeout  
 **Solution**: Check GPS fix quality and barometer calibration
 
+## SITL Simulation Testing
+
+### Quick Start (Simulation Mode)
+
+```bash
+# Terminal 1: Start ArduPilot SITL
+cd ~/ardupilot/ArduCopter
+sim_vehicle.py -v ArduCopter --console --map -l 10.0478,76.3303,0,0 -w
+
+# Terminal 2: MAVROS
+ros2 launch mavros apm.launch.py fcu_url:=udp://:14550@127.0.0.1:14555
+
+# Terminal 3: Drone1 full stack
+cd ~/Documents/ROSArkairo/drone1_ws && source install/setup.zsh
+ros2 launch drone1_bringup drone1_survey.launch.py
+```
+
+### Test Locations from Home (10.0478, 76.3303)
+
+| Target | Latitude | Longitude | Distance |
+| ------ | -------- | --------- | -------- |
+| NE 50m | 10.0482  | 76.3307   | ~50m     |
+| E 100m | 10.0478  | 76.3312   | ~100m    |
+
+### Key SITL Parameters
+
+For testing, the node automatically sets:
+
+- `DISARM_DELAY=0` - Prevents auto-disarm during development
+
 ---
 
 **Maintained by**: Shaan Shoukath  
-**Last Updated**: December 30, 2025
+**Last Updated**: December 31, 2025

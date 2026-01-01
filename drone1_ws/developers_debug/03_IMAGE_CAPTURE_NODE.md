@@ -166,6 +166,36 @@ Camera lenses distort images (barrel/pincushion distortion). Calibration paramet
 **Issue**: Black images  
 **Solution**: Check camera permissions: `sudo chmod 666 /dev/video0`
 
+## Simulation Testing
+
+### Without Physical Camera
+
+For SITL testing without a USB camera, you can use:
+
+**Option 1: Simulated Camera (ROS2 image publisher)**
+
+```bash
+# Use a test video or image sequence
+ros2 run image_tools cam2image --ros-args -p reliable:=false
+```
+
+**Option 2: Gazebo Simulation Camera**
+If using Gazebo with ArduPilot SITL, the simulated camera publishes to the same topic.
+
+**Option 3: Video File Playback**
+Modify the node to read from a video file instead of device:
+
+```python
+self.cap = cv2.VideoCapture('test_video.mp4')  # Instead of /dev/video0
+```
+
+### Verify Camera Output
+
+```bash
+ros2 topic hz /camera/image_raw
+ros2 topic echo /camera/camera_info --once
+```
+
 ---
 
-**Last Updated**: December 30, 2025
+**Last Updated**: December 31, 2025

@@ -1,0 +1,76 @@
+# =============================================================================
+# Detection Test Node Configuration
+# =============================================================================
+# Easy calibration settings for testing yellow disease detection.
+# Adjust HSV values here or live via: ros2 param set /detection_test_node <param> <value>
+# =============================================================================
+
+/**:
+  ros__parameters:
+    # =========================================================================
+    # MODE SELECTION
+    # =========================================================================
+    # use_sim: true  = Laptop webcam + Mock GPS (no hardware needed)
+    # use_sim: false = Pi Camera 3 Wide + GPS from MAVROS (Orange Cube+)
+
+    use_sim: true
+
+    # =========================================================================
+    # CAMERA SETTINGS - SIMULATION MODE
+    # =========================================================================
+    # Only used when use_sim: true (laptop webcam)
+
+    sim_camera_device: 0 # /dev/video0 (laptop webcam)
+    sim_camera_width: 640 # Frame width
+    sim_camera_height: 480 # Frame height
+    sim_camera_fps: 30.0 # Capture FPS
+
+    # =========================================================================
+    # CAMERA SETTINGS - REAL MODE
+    # =========================================================================
+    # Only used when use_sim: false (Pi Camera 3 Wide on Pi 5)
+
+    camera_topic: "/camera/image_raw" # Pi Camera ROS topic
+
+    # =========================================================================
+    # MOCK GPS SETTINGS (only used when use_sim: true)
+    # =========================================================================
+    # Starting GPS coordinates for simulation
+
+    mock_latitude: 10.0478 # Base latitude
+    mock_longitude: 76.3303 # Base longitude
+    mock_altitude: 15.0 # Simulated flight altitude (meters)
+    mock_drift_rate: 0.00001 # GPS drift per detection (simulates movement)
+
+    # =========================================================================
+    # YELLOW DETECTION - HSV RANGE
+    # =========================================================================
+    # Tune these for your target yellow color.
+    # OpenCV HSV ranges: H[0-179], S[0-255], V[0-255]
+    #
+    # Calibration tips:
+    #   - Hue: Yellow is around 20-40
+    #   - Saturation: Higher = more vivid colors
+    #   - Value: Higher = brighter colors
+
+    yellow_h_min: 20 # Hue minimum - yellow range
+    yellow_h_max: 35 # Hue maximum
+    yellow_s_min: 50 # Low for light/pale yellows
+    yellow_s_max: 255 # Saturation maximum
+    yellow_v_min: 50 # Low for dark yellows
+    yellow_v_max: 255 # Value maximum
+
+    # =========================================================================
+    # DETECTION THRESHOLDS
+    # =========================================================================
+
+    min_detection_area: 250 # Minimum yellow blob size (pixels)
+    gps_dedup_distance_m: 3.0 # Ignore detections within this radius (meters)
+
+    # =========================================================================
+    # DISPLAY SETTINGS
+    # =========================================================================
+    # For headless Ubuntu Server, set show_gui: false
+
+    show_gui: false # Show OpenCV preview window
+    show_trackbars: true # Show HSV trackbars (only if show_gui: true)

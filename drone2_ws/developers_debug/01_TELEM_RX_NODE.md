@@ -249,6 +249,48 @@ ros2 topic echo /drone2/target_position
 **Issue**: Buffer timeout  
 **Solution**: Radio link quality issue, messages not arriving together
 
+## Simulation Mode Testing (use_dummy_geotags)
+
+### Dummy Mode for SITL Testing
+
+The node includes built-in simulation mode - use `use_dummy_geotags: true` to test without Drone-1:
+
+```yaml
+# config/telem_rx_params.yaml
+telem_rx:
+  ros__parameters:
+    use_dummy_geotags: true # <-- Enable simulation mode
+    dummy_lat: 10.0480
+    dummy_lon: 76.3305
+    dummy_alt: 10.0
+    dummy_interval_sec: 30.0 # Publish test target every 30s
+```
+
+### Quick SITL Test
+
+```bash
+# Terminal 1: ArduPilot SITL
+cd ~/ardupilot/ArduCopter
+sim_vehicle.py -v ArduCopter --console --map -l 10.0478,76.3303,0,0 -w
+
+# Terminal 2: MAVROS
+ros2 launch mavros apm.launch.py fcu_url:=udp://:14550@127.0.0.1:14555
+
+# Terminal 3: Telem RX with dummy mode
+cd ~/Documents/ROSArkairo/drone2_ws && source install/setup.zsh
+ros2 run telem_rx telem_rx_node --ros-args -p use_dummy_geotags:=true
+
+# Terminal 4: Monitor targets
+ros2 topic echo /drone2/target_position
+```
+
+### Manual Target Injection (Alternative)
+
+```bash
+ros2 topic pub /drone2/target_position sensor_msgs/msg/NavSatFix \
+  "{latitude: 10.0481, longitude: 76.3306, altitude: 10.0}" --once
+```
+
 ---
 
-**Last Updated**: December 30, 2025
+**Last Updated**: December 31, 2025

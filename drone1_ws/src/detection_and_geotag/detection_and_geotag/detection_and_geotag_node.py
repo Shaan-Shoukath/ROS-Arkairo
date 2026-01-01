@@ -128,6 +128,7 @@ class DetectionAndGeotagNode(Node):
         self.declare_parameter('publish_debug', True)
         self.declare_parameter('log_to_csv', True)
         self.declare_parameter('csv_log_path', '/tmp/disease_detections.csv')
+        self.declare_parameter('target_fps', 10.0)  # Target processing framerate
         
         # ═══════════════════════════════════════════════════════════════════
         # GET PARAMETERS
@@ -188,6 +189,7 @@ class DetectionAndGeotagNode(Node):
         self.publish_debug = self.get_parameter('publish_debug').value
         self.log_csv = self.get_parameter('log_to_csv').value
         self.csv_path = self.get_parameter('csv_log_path').value
+        self.target_fps = self.get_parameter('target_fps').value
         
         # ═══════════════════════════════════════════════════════════════════
         # STATE VARIABLES
@@ -198,6 +200,7 @@ class DetectionAndGeotagNode(Node):
         self.logged_locations: List[Tuple[float, float]] = []
         self.detection_counter = 0
         self.detection_enabled = True  # Start enabled, nav node controls this
+        self.last_process_time = 0.0  # For framerate limiting
         
         # Compute camera-to-body rotation
         if HAS_SCIPY:
@@ -315,6 +318,13 @@ class DetectionAndGeotagNode(Node):
         # Only detect when enabled by navigation node
         if not self.detection_enabled:
             return
+        
+        # Frame rate limiting - skip frames if processing faster than target_fps
+        current_time = self.get_clock().now().nanoseconds / 1e9
+        min_interval = 1.0 / self.target_fps if self.target_fps > 0 else 0
+        if current_time - self.last_process_time < min_interval:
+            return
+        self.last_process_time = current_time
         
         try:
             frame = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
@@ -475,57 +485,17 @@ class DetectionAndGeotagNode(Node):
     def _pixel_to_gps(self, px: int, py: int, 
                       frame_w: int, frame_h: int) -> Tuple[Optional[float], Optional[float]]:
         """
-        Convert pixel coordinates to GPS using ray-casting.
+        Return current drone GPS position as the geotag.
         
-        Uses IMU orientation and camera intrinsics for accurate projection.
-        Falls back to simple FOV-based calculation if scipy unavailable.
+        SIMPLIFIED: No ray-casting needed.
+        Drone-2's visual servoing will handle precision centering.
+        The geotag just needs to be "close enough" (~5m accuracy from GPS).
         """
         if self.current_gps is None:
             return None, None
         
-        altitude = max(1.0, self.current_altitude)
-        
-        # Method 1: Full ray-casting with IMU (if scipy available)
-        if HAS_SCIPY and self.current_imu is not None and self.R_body_cam is not None:
-            # Pixel to normalized camera ray
-            X_cam = (px - self.cx) / self.fx
-            Y_cam = (py - self.cy) / self.fy
-            Z_cam = 1.0
-            
-            ray_cam = np.array([X_cam, Y_cam, Z_cam])
-            ray_cam = ray_cam / np.linalg.norm(ray_cam)
-            
-            # Camera -> Body frame
-            ray_body = self.R_body_cam @ ray_cam
-            
-            # Body -> World frame using IMU quaternion
-            q = self.current_imu.orientation
-            rot = R.from_quat([q.x, q.y, q.z, q.w])
-            R_world_body = rot.as_matrix()
-            ray_world = R_world_body @ ray_body
-            
-            # Ray-ground intersection
-            if ray_world[2] >= 0:
-                return None, None
-            
-            t = altitude / (-ray_world[2])
-            x_ground = ray_world[0] * t
-            y_ground = ray_world[1] * t
-            
-            # ENU offset to GPS
-            lat, lon = self._enu_to_gps(x_ground, y_ground)
-            return lat, lon
-        
-        # Method 2: Simple FOV-based projection (fallback)
-        else:
-            dx = (px - frame_w / 2) / (frame_w / 2) * (self.hfov / 2)
-            dy = (py - frame_h / 2) / (frame_h / 2) * (self.vfov / 2)
-            
-            forward = altitude * math.tan(dy)
-            right = altitude * math.tan(dx)
-            
-            lat, lon = self._enu_to_gps(right, forward)
-            return lat, lon
+        # Simply use the drone's current GPS position
+        return self.current_gps.latitude, self.current_gps.longitude
     
     def _enu_to_gps(self, x_offset: float, y_offset: float) -> Tuple[float, float]:
         """Convert ENU offset (meters) to GPS coordinates."""

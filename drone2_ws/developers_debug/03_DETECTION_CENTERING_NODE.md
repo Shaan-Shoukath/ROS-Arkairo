@@ -206,6 +206,12 @@ velocity = clamp(pid_output, -max_vel, +max_vel)
 | `kd`                             | 0.001   | PID derivative gain                               |
 | `centering_timeout_sec`          | 30.0    | Max time to center                                |
 | `control_rate_hz`                | 20.0    | Velocity command rate                             |
+| **Camera Calibration**           |         |                                                   |
+| `camera_offset_x_cm`             | 0.0     | Camera X offset from drone center (+ = right)     |
+| `camera_offset_y_cm`             | 0.0     | Camera Y offset from drone center (+ = forward)   |
+| `camera_hfov_deg`                | 62.2    | Camera horizontal FOV (Pi Cam 3 Wide)             |
+| `camera_vfov_deg`                | 48.8    | Camera vertical FOV                               |
+| `centering_altitude_m`           | 3.0     | Expected hover altitude during centering          |
 
 ## Key Functions
 
@@ -395,7 +401,62 @@ Arrival Trigger
 - Increase Ki to compensate
 - Tighten `centered_threshold_pixels`
 
+## SITL Simulation Testing
+
+### Test Without Flight
+
+```bash
+# Terminal 1: Run node (bypass flight requirements)
+cd ~/Documents/ROSArkairo/drone2_ws && source install/setup.zsh
+ros2 run local_detection_and_centering detection_centering_node
+
+# Terminal 2: Start camera (or simulated camera)
+ros2 run usb_cam usb_cam_node_exe
+
+# Terminal 3: Simulate arrival trigger
+ros2 topic pub --once /drone2/arrival_status std_msgs/msg/Bool "data: true"
+
+# Terminal 4: Monitor
+ros2 topic echo /drone2/spray_ready
+```
+
+### HSV Calibration
+
+Same as Drone-1 detection - use the detection test node or adjust parameters:
+
+```bash
+ros2 param set /detection_centering_node yellow_h_min 20
+ros2 param set /detection_centering_node yellow_h_max 45
+```
+
+### Camera Offset Calibration
+
+If your camera is not centered on the drone frame:
+
+```bash
+# Camera is 5cm right and 3cm forward of drone center
+ros2 run local_detection_and_centering detection_centering_node --ros-args \
+    -p camera_offset_x_cm:=5.0 \
+    -p camera_offset_y_cm:=3.0
+
+# Adjust for altitude and camera FOV (Pi Camera 3 Wide defaults)
+ros2 run local_detection_and_centering detection_centering_node --ros-args \
+    -p camera_hfov_deg:=62.2 \
+    -p camera_vfov_deg:=48.8 \
+    -p centering_altitude_m:=3.0
+```
+
+**How offsets work**: The centering target shifts so the **sprayer** (at drone center) ends up over the target.
+
+### PID Tuning in Simulation
+
+Safe to test PID values in simulation mode:
+
+- Start with low Kp (0.001) and increase
+- Add Kd (0.0005) if oscillating
+- Keep Ki low (0.0001) to avoid windup
+
 ---
 
-**Last Updated**: December 30, 2025  
+**Last Updated**: January 1, 2026  
 **Note**: MERGED node - replaces separate detection + centering nodes

@@ -393,7 +393,51 @@ ros2 topic echo /drone2/spray_done
 - Target volume: 500 mL per spot
 - Duration: 500/100 = 5 seconds
 
+## SITL Simulation Testing
+
+### Test Without Hardware (Bypass Safety Checks)
+
+```bash
+# Terminal 1: Run node with safety checks disabled
+ros2 run sprayer_control sprayer_control_node --ros-args \
+  -p require_armed:=false \
+  -p require_guided:=false \
+  -p min_altitude_m:=0.0
+
+# Terminal 2: Trigger spray
+ros2 topic pub --once /drone2/spray_ready std_msgs/msg/Bool "data: true"
+
+# Terminal 3: Monitor PWM and completion
+ros2 topic echo /drone2/pwm_spray
+ros2 topic echo /drone2/spray_done
+```
+
+**Expected Sequence**:
+
+1. PWM → 2000 (ON)
+2. Wait 5 seconds (default duration)
+3. PWM → 1000 (OFF)
+4. spray_done → True
+
+### Full SITL Test (With Safety Checks)
+
+```bash
+# Terminal 1: ArduPilot SITL + arm + takeoff
+cd ~/ardupilot/ArduCopter
+sim_vehicle.py -v ArduCopter --console --map -l 10.0478,76.3303,0,0
+# Then: arm throttle, mode guided, takeoff 10
+
+# Terminal 2: MAVROS
+ros2 launch mavros apm.launch.py fcu_url:=udp://:14550@127.0.0.1:14555
+
+# Terminal 3: Sprayer node (with safety enabled)
+ros2 run sprayer_control sprayer_control_node
+
+# Terminal 4: Trigger spray (will only work if armed + guided + altitude)
+ros2 topic pub --once /drone2/spray_ready std_msgs/msg/Bool "data: true"
+```
+
 ---
 
-**Last Updated**: December 30, 2025  
+**Last Updated**: December 31, 2025  
 **Safety Critical**: Review all parameters before field deployment!

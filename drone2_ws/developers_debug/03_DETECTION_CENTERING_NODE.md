@@ -459,4 +459,5 @@ Safe to test PID values in simulation mode:
 ---
 
 **Last Updated**: January 1, 2026  
+**Maintainer**: Shaan Shoukath  
 **Note**: MERGED node - replaces separate detection + centering nodes

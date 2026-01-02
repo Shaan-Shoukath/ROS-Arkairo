@@ -450,4 +450,5 @@ ros2 topic echo /drone1/disease_geotag
 
 ---
 
-**Last Updated**: January 1, 2026
+**Last Updated**: January 1, 2026  
+**Maintainer**: Shaan Shoukath

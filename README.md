@@ -20,18 +20,18 @@ A production-grade ROS 2 dual-drone system for **fully autonomous** field survey
 │                    (Direct Telemetry - GCS-Free)                        │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│  Drone-1 (Survey)                          Drone-2 (Sprayer)           │
-│  ┌───────────────┐                    ┌─────────────────────┐         │
-│  │ KML→Auto-Arm  │                    │ IDLE until geotag  │         │
-│  │ Takeoff       │                    │ Unified Navigation │         │
-│  │ Survey        │═══TELEMETRY═══════►│ (ARM→NAV→SPRAY)    │         │
-│  │ Detect→Geotag │    (MAVLink)       │ Merged Detection+  │         │
-│  │ RTL           │                    │ Centering          │         │
-│  └───────────────┘                    └─────────────────────┘         │
+│  Drone-1 (Survey)                          Drone-2 (Sprayer)            │
+│  ┌───────────────┐                    ┌─────────────────────┐           │
+│  │ KML→Auto-Arm  │                    │ IDLE until geotag  │            │
+│  │ Takeoff       │                    │ Unified Navigation │            │
+│  │ Survey        │═══TELEMETRY═══════►│ (ARM→NAV→SPRAY)    │            │
+│  │ Detect→Geotag │    (MAVLink)       │ Merged Detection+  │            │
+│  │ RTL           │                    │ Centering          │            │
+│  └───────────────┘                    └─────────────────────┘           │
 │                                                                         │
-│  ═══════════════ DIRECT SiK RADIO LINK (No GCS) ═══════════════════   │
+│  ═══════════════ DIRECT SiK RADIO LINK (No GCS) ═══════════════════     │
 │                                                                         │
-│  🛡️ TF-Luna Object Avoidance: Handled by ArduPilot (Cube Orange+)      │
+│  🛡️ TF-Luna Object Avoidance: Handled by ArduPilot (Cube Orange+)       │
 │  ⚡ Optimized Architecture: Merged nodes reduce latency                 │
 └─────────────────────────────────────────────────────────────────────────┘
 ```

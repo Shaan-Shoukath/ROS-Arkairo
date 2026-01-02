@@ -347,4 +347,5 @@ ros2 topic pub /drone1/disease_geotag geographic_msgs/msg/GeoPointStamped \
 
 ---
 
-**Last Updated**: December 31, 2025
+**Last Updated**: December 31, 2025  
+**Maintainer**: Shaan Shoukath

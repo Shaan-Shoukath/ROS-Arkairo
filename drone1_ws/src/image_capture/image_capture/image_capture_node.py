@@ -32,9 +32,18 @@ class ImageCaptureNode(Node):
     def __init__(self):
         super().__init__('image_capture_node')
         
-        # Declare parameters
-        self.declare_parameter('camera_device', '/dev/video0')
-        self.declare_parameter('use_usb_camera', True)
+        # ================================================================
+        # PARAMETERS
+        # ================================================================
+        # Camera mode: use_sim selects between laptop webcam and Pi Camera
+        self.declare_parameter('use_sim', True)  # True = laptop webcam, False = Pi Camera
+        
+        # Camera device settings
+        self.declare_parameter('camera_device', '/dev/video0')  # USB camera path
+         self.declare_parameter('webcam_index', 0)  # Laptop webcam index for SITL
+        self.declare_parameter('pi_camera_device', '/dev/video0')  # Pi Camera via v4l2
+        
+        # Resolution and frame rate
         self.declare_parameter('image_width', 1920)
         self.declare_parameter('image_height', 1080)
         self.declare_parameter('fps', 30.0)
@@ -54,8 +63,10 @@ class ImageCaptureNode(Node):
         self.declare_parameter('distortion_coefficients.k3', 0.0)
         
         # Get parameters
+        self.use_sim = self.get_parameter('use_sim').value
         self.camera_device = self.get_parameter('camera_device').value
-        self.use_usb_camera = self.get_parameter('use_usb_camera').value
+        self.webcam_index = self.get_parameter('webcam_index').value
+        self.pi_camera_device = self.get_parameter('pi_camera_device').value
         self.image_width = self.get_parameter('image_width').value
         self.image_height = self.get_parameter('image_height').value
         self.fps = self.get_parameter('fps').value
@@ -110,29 +121,52 @@ class ImageCaptureNode(Node):
         )
         
         self.get_logger().info('Image Capture Node initialized')
+        self.get_logger().info(f'  Mode: {"SITL (laptop webcam)" if self.use_sim else "Pi Camera"}')
         self.get_logger().info(f'  Resolution: {self.image_width}x{self.image_height}')
         self.get_logger().info(f'  FPS: {self.fps}')
     
     def _init_camera(self):
-        """Initialize camera capture."""
-        if not self.use_usb_camera:
-            self.get_logger().info('USB camera disabled, using simulated images')
-            return
+        """
+        Initialize camera capture based on use_sim mode.
         
+        Modes:
+            use_sim=True  → Laptop webcam via index (SITL testing)
+            use_sim=False → Pi Camera 3 via libcamera/v4l2 (real hardware)
+        """
         try:
-            # Try to parse device as integer (camera index)
-            try:
-                device_index = int(self.camera_device)
-                self.cap = cv2.VideoCapture(device_index)
-            except ValueError:
-                self.cap = cv2.VideoCapture(self.camera_device)
+            if self.use_sim:
+                # SITL mode: Use laptop webcam by index
+                self.get_logger().info(f'Opening laptop webcam (index {self.webcam_index})...')
+                self.cap = cv2.VideoCapture(self.webcam_index)
+                source_name = f'webcam:{self.webcam_index}'
+            else:
+                # Real hardware: Pi Camera 3 Wide via libcamera
+                # Pi Camera 3 on Pi 5 is accessible via libcamera-vid or v4l2
+                # Use GStreamer pipeline for libcamera on Pi 5
+                pi_cam_pipeline = (
+                    f'libcamerasrc ! '
+                    f'video/x-raw,width={self.image_width},height={self.image_height},framerate={int(self.fps)}/1 ! '
+                    f'videoconvert ! appsink'
+                )
+                
+                # Try libcamera first (Pi 5 + Pi Camera 3)
+                self.get_logger().info('Trying libcamera GStreamer pipeline...')
+                self.cap = cv2.VideoCapture(pi_cam_pipeline, cv2.CAP_GSTREAMER)
+                
+                if not self.cap.isOpened():
+                    # Fallback to v4l2 device
+                    self.get_logger().warn('libcamera failed, trying v4l2 device...')
+                    self.cap = cv2.VideoCapture(self.pi_camera_device)
+                
+                source_name = 'Pi Camera (libcamera/v4l2)'
             
             if not self.cap.isOpened():
-                self.get_logger().error(f'Failed to open camera: {self.camera_device}')
+                self.get_logger().error(f'Failed to open camera')
+                self.get_logger().info('Falling back to simulated test images')
                 self.cap = None
                 return
             
-            # Set resolution
+            # Set resolution (may not apply to all cameras)
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.image_width)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.image_height)
             self.cap.set(cv2.CAP_PROP_FPS, self.fps)
@@ -142,11 +176,12 @@ class ImageCaptureNode(Node):
             actual_height = self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
             
             self.get_logger().info(
-                f'Camera opened: {actual_width}x{actual_height}'
+                f'Camera opened: {source_name} ({int(actual_width)}x{int(actual_height)})'
             )
             
         except Exception as e:
             self.get_logger().error(f'Camera initialization error: {e}')
+            self.get_logger().info('Falling back to simulated test images')
             self.cap = None
     
     def _create_camera_info(self) -> CameraInfo:

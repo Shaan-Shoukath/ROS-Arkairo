@@ -226,4 +226,5 @@ ros2 topic pub --once /drone2/spray_ready std_msgs/msg/Bool "data: true"
 ---
 
 **Last Updated**: January 1, 2026  
+**Maintainer**: Shaan Shoukath  
 **Safety Critical**: Review all parameters before field deployment!

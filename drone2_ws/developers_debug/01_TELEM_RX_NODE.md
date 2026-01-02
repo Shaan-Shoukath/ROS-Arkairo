@@ -293,4 +293,5 @@ ros2 topic pub /drone2/target_position sensor_msgs/msg/NavSatFix \
 
 ---
 
-**Last Updated**: December 31, 2025
+**Last Updated**: December 31, 2025  
+**Maintainer**: Shaan Shoukath

@@ -9,24 +9,37 @@
 
 ## What This Node Does
 
-Simple camera interface that:
+Dual-mode camera interface that:
 
-1. **Opens USB camera device** (e.g., `/dev/video0`)
-2. **Captures frames continuously** at specified FPS
-3. **Publishes raw images** to ROS2 topics
-4. **Provides camera calibration info** for downstream processing
+1. **Selects camera source** based on `use_sim` parameter
+2. **use_sim=true**: Uses laptop webcam (for SITL testing)
+3. **use_sim=false**: Uses Pi Camera 3 Wide via libcamera (for real hardware)
+4. **Publishes raw images** to ROS2 topics
+5. **Falls back to test images** if camera fails
+
+## Camera Modes (Jan 2026 Update)
+
+| Mode            | Camera Source             | Use Case              |
+| --------------- | ------------------------- | --------------------- |
+| `use_sim=true`  | Laptop webcam (index 0)   | SITL testing          |
+| `use_sim=false` | Pi Camera 3 via libcamera | Real hardware on Pi 5 |
 
 ## Core Logic
 
 ```python
-while True:
-    ret, frame = camera.read()  # Capture frame
-    if ret:
-        publish_image(frame)    # Convert to ROS msg and publish
-        publish_camera_info()   # Send calibration data
-```
+def _init_camera(self):
+    if self.use_sim:
+        # SITL: Use laptop webcam
+        self.cap = cv2.VideoCapture(self.webcam_index)
+    else:
+        # Real hardware: Pi Camera via libcamera GStreamer
+        pipeline = 'libcamerasrc ! video/x-raw... ! appsink'
+        self.cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
 
-**Design**: Simple blocking loop, no complex state management needed.
+        if not self.cap.isOpened():
+            # Fallback to v4l2
+            self.cap = cv2.VideoCapture(self.pi_camera_device)
+```
 
 ## Publishers
 
@@ -47,12 +60,18 @@ while True:
 
 | Parameter                   | Default                | Description                          |
 | --------------------------- | ---------------------- | ------------------------------------ |
-| `camera_device`             | '/dev/video0'          | Camera device path                   |
-| `use_usb_camera`            | True                   | Enable USB camera capture            |
+| **Mode Selection**          |                        |                                      |
+| `use_sim`                   | true                   | true=laptop webcam, false=Pi Camera  |
+| **Camera Devices**          |                        |                                      |
+| `webcam_index`              | 0                      | Laptop webcam index (use_sim=true)   |
+| `pi_camera_device`          | '/dev/video0'          | Pi Camera v4l2 fallback              |
+| `camera_device`             | '/dev/video0'          | Legacy: general camera device        |
+| **Resolution**              |                        |                                      |
 | `image_width`               | 1920                   | Frame width (pixels)                 |
 | `image_height`              | 1080                   | Frame height (pixels)                |
 | `fps`                       | 30.0                   | Capture frame rate                   |
 | `frame_id`                  | 'camera_optical_frame' | TF frame name                        |
+| **Camera Calibration**      |                        |                                      |
 | `camera_matrix.fx`          | 1000.0                 | Focal length X (pixels)              |
 | `camera_matrix.fy`          | 1000.0                 | Focal length Y (pixels)              |
 | `camera_matrix.cx`          | 960.0                  | Principal point X                    |
@@ -61,21 +80,7 @@ while True:
 
 ## Key Functions
 
-### `_init_camera()` - Camera Initialization
-
-```python
-def _init_camera(self):
-    self.cap = cv2.VideoCapture(self.camera_device)
-    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.image_width)
-    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.image_height)
-    self.cap.set(cv2.CAP_PROP_FPS, self.fps)
-```
-
-**Built-in Functions**:
-
-- `cv2.VideoCapture()` - Opens camera device
-- `cap.set()` - Configures camera properties
-- `CAP_PROP_*` - OpenCV camera property constants
+### `_init_camera()` - Dual Mode Camera Init
 
 ### `capture_and_publish()` - Main Loop
 
@@ -198,4 +203,6 @@ ros2 topic echo /camera/camera_info --once
 
 ---
 
-**Last Updated**: December 31, 2025
+**Last Updated**: January 1, 2026  
+**Maintainer**: Shaan Shoukath  
+**⚠️ Note**: use_sim parameter controls camera source selection

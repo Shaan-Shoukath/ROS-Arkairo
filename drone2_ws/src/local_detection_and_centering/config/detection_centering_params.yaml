@@ -1,23 +1,71 @@
+# =============================================================================
+# Detection & Centering Node Configuration
+# =============================================================================
+# Author: Shaan Shoukath
+# Full spray cycle: Detect → Center → Descend → Spray → Ascend → Ready for next
+# =============================================================================
+
 detection_centering_node:
   ros__parameters:
-    # Detection parameters
+    # =========================================================================
+    # SIMULATION MODE
+    # =========================================================================
+    # When true: Skip detection/centering, go straight to descent on arrival
+    # When false: Run full detection → centering → descent cycle
+    use_sim: true
+
+    # =========================================================================
+    # DETECTION PARAMETERS
+    # =========================================================================
     confidence_threshold: 0.6
-    detection_timeout_sec: 30.0
-    max_detection_attempts: 5
-    require_consecutive_detections: 2
-    min_detection_area_px: 500
-    
-    # Centering parameters
-    image_width: 1920
-    image_height: 1080
-    centered_threshold_pixels: 30
-    max_velocity_mps: 0.5
-    
-    # PID gains
-    kp: 0.002
-    ki: 0.0001
-    kd: 0.001
-    
-    # Timeout
-    centering_timeout_sec: 30.0
-    control_rate_hz: 20.0
+    detection_timeout_sec: 30.0 # Max time to find disease after arrival
+    max_detection_attempts: 5 # Frames to try before giving up
+    require_consecutive_detections: 2 # Consecutive positives needed
+    min_detection_area_px: 500 # Min pixels for valid detection
+
+    # =========================================================================
+    # CAMERA SETTINGS (Pi Camera v1 at 720p)
+    # =========================================================================
+    image_width: 720 # Video width
+    image_height: 720 # Video height (square recommended)
+    camera_hfov_deg: 62.0 # Horizontal FOV
+    camera_vfov_deg: 62.0 # Vertical FOV (same for square)
+
+    # Camera offset from drone center (for sprayer alignment)
+    camera_offset_x_cm: 0.0 # Positive = camera is RIGHT of center
+    camera_offset_y_cm: 0.0 # Positive = camera is FORWARD of center
+
+    # =========================================================================
+    # CENTERING PARAMETERS (Visual Servoing)
+    # =========================================================================
+    centered_threshold_pixels: 30 # Error tolerance to consider "centered"
+    max_velocity_mps: 0.5 # Max lateral drift velocity
+    centering_timeout_sec: 30.0 # Max time for centering phase
+    control_rate_hz: 20.0 # Control loop frequency
+
+    # PID Gains for velocity control
+    kp: 0.002 # Proportional gain
+    ki: 0.0001 # Integral gain
+    kd: 0.001 # Derivative gain
+
+    # =========================================================================
+    # ALTITUDE SETTINGS (EASILY CHANGEABLE)
+    # =========================================================================
+    # >>> CHANGE THESE VALUES FOR DIFFERENT FLIGHT HEIGHTS <<<
+
+    # Navigation altitude: Height for survey and transit (22 feet = 6.7m)
+    navigation_altitude_m: 6.7
+    centering_altitude_m: 6.7 # Same as navigation for calibration
+
+    # Spray altitude: Target height for spraying (lower for accuracy)
+    spray_altitude_m: 3.0
+
+    # Velocity settings
+    descent_velocity_mps: 0.3 # Descent speed (m/s)
+    ascend_velocity_mps: 0.5 # Ascend speed (faster, m/s)
+    altitude_tolerance_m: 0.3 # Tolerance for altitude checks
+
+    # =========================================================================
+    # SPRAY SETTINGS
+    # =========================================================================
+    spray_duration_sec: 3.0 # How long to spray at each target

@@ -41,7 +41,10 @@ class State(Enum):
     IDLE = auto()         # Waiting for arrival trigger
     DETECTING = auto()    # Looking for disease
     CENTERING = auto()    # Visual servoing to center
-    COMPLETED = auto()    # Ready to spray
+    DESCENDING = auto()   # Descending to spray altitude
+    SPRAYING = auto()     # Waiting for spray to complete
+    ASCENDING = auto()    # Ascending back to navigation altitude
+    COMPLETED = auto()    # Cycle complete, ready for next target
 
 
 @dataclass
@@ -58,6 +61,9 @@ class DetectionCenteringNode(Node):
     
     def __init__(self):
         super().__init__('detection_centering_node')
+        
+        # Simulation mode - skip detection, go straight to descent
+        self.declare_parameter('use_sim', True)
         
         # Detection parameters
         self.declare_parameter('confidence_threshold', 0.6)
@@ -84,9 +90,20 @@ class DetectionCenteringNode(Node):
         self.declare_parameter('camera_offset_y_cm', 0.0)
         
         # Camera FOV and altitude for automatic calibration
-        self.declare_parameter('camera_hfov_deg', 62.2)  # Pi Camera 3 Wide horizontal FOV
-        self.declare_parameter('camera_vfov_deg', 48.8)  # Pi Camera 3 Wide vertical FOV
-        self.declare_parameter('centering_altitude_m', 3.0)  # Expected hover altitude during centering
+        self.declare_parameter('camera_hfov_deg', 62.0)  # Pi Camera horizontal FOV
+        self.declare_parameter('camera_vfov_deg', 48.0)  # Pi Camera vertical FOV
+        self.declare_parameter('centering_altitude_m', 6.7)  # 22 feet navigation altitude
+        
+        # Altitude parameters (EASILY CHANGEABLE - 22 feet = 6.7m)
+        self.declare_parameter('navigation_altitude_m', 6.7)  # Height for navigation (22 feet)
+        self.declare_parameter('spray_altitude_m', 2.0)       # Target altitude for spraying
+        self.declare_parameter('descent_velocity_mps', 0.3)   # Descent speed
+        self.declare_parameter('ascend_velocity_mps', 0.5)    # Ascend speed (faster than descent)
+        self.declare_parameter('altitude_tolerance_m', 0.3)   # Tolerance for altitude checks
+        self.declare_parameter('spray_duration_sec', 3.0)     # How long to spray
+        
+        # Simulation mode (skip detection/centering)
+        self.use_sim = self.get_parameter('use_sim').value
         
         # Detection params
         self.conf_thresh = self.get_parameter('confidence_threshold').value
@@ -105,6 +122,14 @@ class DetectionCenteringNode(Node):
         self.kd = self.get_parameter('kd').value
         self.centering_timeout = self.get_parameter('centering_timeout_sec').value
         control_rate = self.get_parameter('control_rate_hz').value
+        
+        # Spray altitude params (easily accessible)
+        self.navigation_altitude = self.get_parameter('navigation_altitude_m').value
+        self.spray_altitude = self.get_parameter('spray_altitude_m').value
+        self.descent_velocity = self.get_parameter('descent_velocity_mps').value
+        self.ascend_velocity = self.get_parameter('ascend_velocity_mps').value
+        self.altitude_tolerance = self.get_parameter('altitude_tolerance_m').value
+        self.spray_duration = self.get_parameter('spray_duration_sec').value
         
         # Camera offset and calibration
         cam_offset_x = self.get_parameter('camera_offset_x_cm').value
@@ -139,6 +164,7 @@ class DetectionCenteringNode(Node):
         self.get_logger().info(f'Ground coverage: {ground_width_m:.2f}x{ground_height_m:.2f}m ({pixels_per_cm:.1f} px/cm)')
         self.get_logger().info(f'Camera offset: X={cam_offset_x}cm, Y={cam_offset_y}cm')
         self.get_logger().info(f'Adjusted center: ({self.center_x:.1f}, {self.center_y:.1f})')
+        self.get_logger().info(f'Spray altitude: {self.spray_altitude}m (descent speed: {self.descent_velocity}m/s)')
         
         # State machine
         self.state = State.IDLE
@@ -148,6 +174,9 @@ class DetectionCenteringNode(Node):
         self.detection_attempts = 0
         self.consecutive_detections = 0
         self.current_bbox: Optional[Tuple[int, int, int, int]] = None
+        
+        # Altitude tracking
+        self.current_altitude: float = 0.0
         
         # Centering state
         self.pid = PIDState()
@@ -170,9 +199,10 @@ class DetectionCenteringNode(Node):
         )
         
         # Subscribers
+        # Use sensor_qos for arrival_status for compatibility with ros2 topic pub
         self.arrival_sub = self.create_subscription(
             Bool, '/drone2/arrival_status',
-            self.arrival_callback, reliable_qos
+            self.arrival_callback, sensor_qos
         )
         
         self.image_sub = self.create_subscription(
@@ -207,14 +237,20 @@ class DetectionCenteringNode(Node):
         self.get_logger().info(f'  Max velocity: {self.max_vel} m/s')
     
     def arrival_callback(self, msg: Bool):
-        """Start detection when arrived at target."""
+        """Start detection/spray cycle when arrived at target."""
         if msg.data and self.state == State.IDLE:
-            self._transition_to(State.DETECTING)
-            self.get_logger().info('Arrived - starting detection')
+            if self.use_sim:
+                # SITL mode: skip detection/centering, go straight to descent
+                self.get_logger().info('Arrived (SIM MODE) - skipping detection, descending to spray')
+                self._transition_to(State.DESCENDING)
+            else:
+                # Real mode: run full detection cycle
+                self._transition_to(State.DETECTING)
+                self.get_logger().info('Arrived - starting detection')
     
     def pose_callback(self, msg: PoseStamped):
-        """Update current pose (for future enhancements)."""
-        pass
+        """Update current altitude from local position."""
+        self.current_altitude = msg.pose.position.z
     
     def image_callback(self, msg: Image):
         """Process image for detection and centering."""
@@ -273,10 +309,18 @@ class DetectionCenteringNode(Node):
             self.get_logger().error(f'Target update error: {e}')
     
     def control_loop(self):
-        """Main control loop for centering."""
-        if self.state != State.CENTERING:
-            return
-        
+        """Main control loop for centering, descent, spray, and ascent."""
+        if self.state == State.CENTERING:
+            self._handle_centering()
+        elif self.state == State.DESCENDING:
+            self._handle_descent()
+        elif self.state == State.SPRAYING:
+            self._handle_spraying()
+        elif self.state == State.ASCENDING:
+            self._handle_ascent()
+    
+    def _handle_centering(self):
+        """Handle centering phase - visual servoing to align with target."""
         # Check timeout
         elapsed = self._get_state_elapsed()
         if elapsed > self.centering_timeout:
@@ -298,14 +342,13 @@ class DetectionCenteringNode(Node):
         error_x = target_x - self.center_x
         error_y = target_y - self.center_y
         
-        # Check if centered
+        # Check if centered - transition to DESCENDING
         if abs(error_x) < self.centered_thresh and abs(error_y) < self.centered_thresh:
             self.get_logger().info(
-                f'Target centered (error: {error_x:.1f}px, {error_y:.1f}px)'
+                f'Target centered (error: {error_x:.1f}px, {error_y:.1f}px) - descending to spray altitude'
             )
             self._stop_motion()
-            self._publish_ready(True)
-            self._transition_to(State.COMPLETED)
+            self._transition_to(State.DESCENDING)
             return
         
         # PID control
@@ -328,6 +371,82 @@ class DetectionCenteringNode(Node):
         
         # Publish velocity command
         self._publish_velocity(vel_x, vel_y)
+    
+    def _handle_descent(self):
+        """Handle descent phase - descend to spray altitude."""
+        # Log progress every second
+        elapsed = self._get_state_elapsed()
+        if int(elapsed) != getattr(self, '_last_descent_log', -1):
+            self._last_descent_log = int(elapsed)
+            self.get_logger().info(
+                f'[DESCENDING] Current: {self.current_altitude:.1f}m → Target: {self.spray_altitude:.1f}m'
+            )
+        
+        # Check if at spray altitude
+        if self.current_altitude <= self.spray_altitude + self.altitude_tolerance:
+            self.get_logger().info(
+                f'Reached spray altitude: {self.current_altitude:.1f}m - starting spray'
+            )
+            self._stop_motion()
+            self._publish_ready(True)  # Signal sprayer to activate
+            self._transition_to(State.SPRAYING)
+            return
+        
+        # Descent timeout (30 seconds max)
+        if elapsed > 30.0:
+            self.get_logger().warn('Descent timeout')
+            self._stop_motion()
+            self._publish_ready(False)
+            self._transition_to(State.IDLE)
+            return
+        
+        # Command descent velocity
+        self._publish_velocity(0.0, 0.0, -self.descent_velocity)
+    
+    def _handle_spraying(self):
+        """Handle spray phase - wait for spray duration then ascend."""
+        elapsed = self._get_state_elapsed()
+        
+        # Log every second
+        if int(elapsed) != getattr(self, '_last_spray_log', -1):
+            self._last_spray_log = int(elapsed)
+            remaining = max(0, self.spray_duration - elapsed)
+            self.get_logger().info(f'[SPRAYING] {remaining:.0f}s remaining...')
+        
+        # Spray complete - start ascending
+        if elapsed >= self.spray_duration:
+            self.get_logger().info('Spray complete - ascending to navigation altitude')
+            self._transition_to(State.ASCENDING)
+    
+    def _handle_ascent(self):
+        """Handle ascent phase - climb back to navigation altitude."""
+        elapsed = self._get_state_elapsed()
+        
+        # Log progress every second
+        if int(elapsed) != getattr(self, '_last_ascent_log', -1):
+            self._last_ascent_log = int(elapsed)
+            self.get_logger().info(
+                f'[ASCENDING] Current: {self.current_altitude:.1f}m → Target: {self.navigation_altitude:.1f}m'
+            )
+        
+        # Check if at navigation altitude
+        if self.current_altitude >= self.navigation_altitude - self.altitude_tolerance:
+            self.get_logger().info(
+                f'Reached navigation altitude: {self.current_altitude:.1f}m - ready for next target'
+            )
+            self._stop_motion()
+            self._transition_to(State.COMPLETED)
+            return
+        
+        # Ascent timeout (30 seconds max)
+        if elapsed > 30.0:
+            self.get_logger().warn('Ascent timeout')
+            self._stop_motion()
+            self._transition_to(State.COMPLETED)  # Still continue to next target
+            return
+        
+        # Command ascent velocity
+        self._publish_velocity(0.0, 0.0, self.ascend_velocity)
     
     def _detect_disease(self, image: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
         """Detect disease in image. Returns bbox (x, y, w, h) or None."""
@@ -353,8 +472,8 @@ class DetectionCenteringNode(Node):
         x, y, w, h = cv2.boundingRect(largest)
         return (x, y, w, h)
     
-    def _publish_velocity(self, vx: float, vy: float):
-        """Publish velocity command."""
+    def _publish_velocity(self, vx: float, vy: float, vz: float = 0.0):
+        """Publish velocity command (body frame)."""
         msg = TwistStamped()
         msg.header = Header()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -362,13 +481,13 @@ class DetectionCenteringNode(Node):
         
         msg.twist.linear.x = vx
         msg.twist.linear.y = vy
-        msg.twist.linear.z = 0.0
+        msg.twist.linear.z = vz
         
         self.vel_pub.publish(msg)
     
     def _stop_motion(self):
         """Stop all motion."""
-        self._publish_velocity(0.0, 0.0)
+        self._publish_velocity(0.0, 0.0, 0.0)
     
     def _publish_ready(self, ready: bool):
         """Publish spray ready status."""

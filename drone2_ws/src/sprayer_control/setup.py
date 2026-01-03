@@ -13,5 +13,6 @@ setup(
     description='Spray actuation with safety checks', license='Apache-2.0',
     entry_points={'console_scripts': [
         'sprayer_control_node = sprayer_control.sprayer_control_node:main',
+        'pump_test = sprayer_control.pump_test:main',
     ]},
 )

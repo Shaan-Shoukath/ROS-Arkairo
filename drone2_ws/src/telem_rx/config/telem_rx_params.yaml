@@ -1,0 +1,36 @@
+# =============================================================================
+# Telemetry RX Node Configuration
+# =============================================================================
+# Author: Shaan Shoukath
+# Receives geotags from Drone-1 via MAVLink telemetry
+# =============================================================================
+
+telem_rx_node:
+  ros__parameters:
+    # =========================================================================
+    # BUFFER SETTINGS
+    # =========================================================================
+    buffer_timeout_sec: 5.0 # Timeout for incomplete messages
+
+    # =========================================================================
+    # VALIDATION SETTINGS
+    # =========================================================================
+    validate_coordinates: true # Enable coordinate validation
+    max_distance_from_home_m: 10000.0 # Max distance from home (meters)
+    home_latitude: 10.0478 # Home GPS (for validation)
+    home_longitude: 76.3303
+
+    # =========================================================================
+    # ALTITUDE OVERRIDE
+    # =========================================================================
+    override_altitude: false # Override incoming altitude
+    target_altitude_m: 6.7 # Altitude to use if overriding (22 feet)
+
+    # =========================================================================
+    # DUMMY GEOTAG MODE (for testing without Drone-1)
+    # =========================================================================
+    use_dummy_geotags: false # Enable for testing
+    dummy_lat: 10.0481 # Test target latitude
+    dummy_lon: 76.3306 # Test target longitude
+    dummy_alt: 10.0 # Test target altitude
+    dummy_interval_sec: 10.0 # Send dummy every N seconds

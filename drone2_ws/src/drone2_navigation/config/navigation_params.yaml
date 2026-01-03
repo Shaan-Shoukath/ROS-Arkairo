@@ -10,14 +10,15 @@
 /**:
   ros__parameters:
     # -------------------------------------------------------------------------
-    # ALTITUDE SETTINGS (meters)
+    # ALTITUDE SETTINGS (meters) - 22 feet = 6.7m
     # -------------------------------------------------------------------------
+    # >>> CHANGE THESE VALUES FOR DIFFERENT FLIGHT HEIGHTS <<<
+
     # Initial takeoff altitude - drone climbs to this before starting navigation
-    takeoff_altitude_m: 10.0
+    takeoff_altitude_m: 6.7
 
     # Navigation/cruise altitude - maintains this height while flying to targets
-    # For sprayer drone: typically same as takeoff or slightly lower
-    navigation_altitude_m: 10.0
+    navigation_altitude_m: 6.7
 
     # -------------------------------------------------------------------------
     # WAYPOINT SETTINGS

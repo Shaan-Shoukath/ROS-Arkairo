@@ -1,297 +1,40 @@
-# Telemetry RX Node - Developer Documentation
+# Telem RX Node - Developer Documentation
 
 ## Overview
 
 **File**: `drone2_ws/src/telem_rx/telem_rx/telem_rx_node.py`  
 **Package**: `telem_rx`  
 **Node Name**: `telem_rx_node`  
-**Purpose**: Receives disease geotags from Drone-1 via MAVLink telemetry and dispatches to navigation
+**Author**: Shaan Shoukath
 
-## What This Node Does
+## Purpose
 
-Telemetry receiver and message assembler for Drone-2:
+Receives disease geotag telemetry from Drone-1 via MAVLink and republishes as ROS2 NavSatFix messages for the navigation node.
 
-1. **Receives MAVLink messages** from telemetry radio
-2. **Assembles GPS coordinates** from 3 separate messages (lat, lon, alt)
-3. **Validates coordinates** for reasonableness
-4. **Publishes navigation targets** to drone2_navigation
-5. **Handles dummy geotags** for testing without Drone-1
+## Key Parameters
 
-## Core Logic & Reasoning
-
-### Message Assembly Buffer
-
-**Problem**: GPS coordinate arrives as 3 separate messages over radio  
-**Solution**: Buffering system assembles complete coordinate
-
-```python
-# Message 1: d_lat = 10.0478
-buffer_lat = 10.0478
-
-# Message 2: d_lon = 76.3303
-buffer_lon = 76.3303
-
-# Message 3: d_alt = 50.0
-buffer_alt = 50.0
-# → Complete! Publish navigation target
+```yaml
+serial_port: "/dev/ttyUSB0" # Telemetry radio port
+baud_rate: 57600 # MAVLink baud rate
 ```
-
-**Timeout**: If all 3 don't arrive within 5 seconds, buffer resets.
-
-**Why needed?** MAVLink NAMED_VALUE_FLOAT carries single value. GPS needs lat+lon+alt.
-
-### Validation Logic
-
-```python
-if distance_from_home(lat, lon) > max_distance:
-    reject("Too far from home - likely corrupt data")
-
-if altitude < 0 or altitude > 500:
-    reject("Invalid altitude")
-
-if lat == 0.0 and lon == 0.0:
-    reject("Null coordinates")
-```
-
-**Purpose**: Prevents flying to erroneous GPS coordinates from radio interference.
-
-### Dummy Mode (Testing)
-
-When `use_dummy_geotags=True`:
-
-```python
-# Publishes test coordinate at interval
-publish_target(dummy_lat, dummy_lon, dummy_alt)
-```
-
-**Use Case**: Testing navigation without Drone-1 hardware.
 
 ## Subscribers
 
-### `/mavros/debug_value/recv` (mavros_msgs/DebugValue)
-
-- **Source**: MAVROS (from telemetry radio)
-- **Purpose**: Receives encoded GPS data from Drone-1
-- **Expected Names**: 'd_lat', 'd_lon', 'd_alt'
-- **Rate**: Variable (depends on Drone-1 detection rate)
+None (receives via MAVLink serial)
 
 ## Publishers
 
-### 1. `/drone2/target_position` (sensor_msgs/NavSatFix)
+| Topic                     | Type      | Purpose               |
+| ------------------------- | --------- | --------------------- |
+| `/drone2/target_position` | NavSatFix | Geotag for navigation |
+| `/drone2/telem_status`    | String    | Connection status     |
 
-- **Trigger**: When complete GPS assembled and validated
-- **Purpose**: Navigation target for drone2_navigation
-- **QoS**: RELIABLE + TRANSIENT_LOCAL
-- **Format**: Standard GPS message
-
-### 2. `/drone2/new_target_received` (std_msgs/Bool)
-
-- **Trigger**: Synchronized with target_position
-- **Purpose**: Notification flag (legacy, may not be needed)
-
-## Parameters
-
-| Parameter                  | Default | Description                     |
-| -------------------------- | ------- | ------------------------------- |
-| `buffer_timeout_sec`       | 5.0     | Max time to assemble 3 messages |
-| `validate_coordinates`     | True    | Enable validation checks        |
-| `max_distance_from_home_m` | 10000.0 | Max valid distance              |
-| `home_latitude`            | 0.0     | Reference latitude              |
-| `home_longitude`           | 0.0     | Reference longitude             |
-| `override_altitude`        | False   | Replace received altitude       |
-| `target_altitude_m`        | 20.0    | Override altitude value         |
-| **Dummy Mode**             |         |                                 |
-| `use_dummy_geotags`        | False   | Enable test mode                |
-| `dummy_lat`                | 10.0480 | Test latitude                   |
-| `dummy_lon`                | 76.3305 | Test longitude                  |
-| `dummy_alt`                | 10.0    | Test altitude                   |
-| `dummy_interval_sec`       | 10.0    | Test publish rate               |
-
-## Key Functions
-
-### `mavlink_callback()` - Message Handler
-
-```python
-def mavlink_callback(self, msg: DebugValue):
-    if msg.name == 'd_lat':
-        self.buffer_lat = msg.value_float
-    elif msg.name == 'd_lon':
-        self.buffer_lon = msg.value_float
-    elif msg.name == 'd_alt':
-        self.buffer_alt = msg.value_float
-        self.try_dispatch()  # Alt is last, try publish
-```
-
-**Built-in**: String comparison with `==`
-
-### `try_dispatch()` - Complete Message Check
-
-```python
-def try_dispatch(self):
-    if all([buffer_lat, buffer_lon, buffer_alt]):
-        if validate_coordinates(lat, lon, alt):
-            publish_target(lat, lon, alt)
-            clear_buffer()
-```
-
-**Built-in**: `all()` - Returns True if all items truthy
-
-### `validate_coordinates()` - Sanity Checks
-
-```python
-def validate_coordinates(lat, lon, alt) -> bool:
-    if not (-90 <= lat <= 90):
-        return False
-    if not (-180 <= lon <= 180):
-        return False
-    if distance_from_home(lat, lon) > max_distance:
-        return False
-    return True
-```
-
-### `haversine_distance()` - GPS Distance
-
-```python
-def haversine_distance(lat1, lon1, lat2, lon2) -> float:
-    R = 6371000  # Earth radius
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-    a = sin(dlat/2)**2 + cos(lat1)*cos(lat2)*sin(dlon/2)**2
-    c = 2 * atan2(sqrt(a), sqrt(1-a))
-    return R * c
-```
-
-**Built-in**:
-
-- `math.radians()`, `math.sin()`, `math.cos()`
-- `math.atan2()`, `math.sqrt()`
-
-## Package Dependencies
-
-### ROS2 Packages
-
-- **rclpy**: Node, QoS, Timer
-- **mavros_msgs**: DebugValue
-- **sensor_msgs**: NavSatFix
-- **std_msgs**: Bool, Header
-- **geographic_msgs**: GeoPoint
-
-### Python Libraries
-
-- **math**: Distance calculations
-- **typing**: Optional type hints
-
-## Message Flow
+## Data Flow
 
 ```
-Drone-1 Radio TX
-       ↓
-[AIR: MAVLink NAMED_VALUE_FLOAT × 3]
-       ↓
-Drone-2 Radio RX
-       ↓
-MAVROS
-       ↓
-/mavros/debug_value/recv
-       ↓
-telem_rx_node (this)
-       ↓ (assembly + validation)
-/drone2/target_position
-       ↓
-drone2_navigation_node
-```
-
-## Error Handling
-
-**Incomplete message**: Buffer times out after 5s, clears  
-**Out of range coordinates**: Rejected, logged  
-**Radio packet loss**: Waits for retransmission  
-**Corrupt data**: Validation catches, prevents bad navigation
-
-## Testing Checklist
-
-- [ ] Node starts and subscribes to MAVLink
-- [ ] Receives 'd_lat', 'd_lon', 'd_alt' messages
-- [ ] Assembles complete GPS coordinate
-- [ ] Validates coordinates correctly
-- [ ] Publishes to /drone2/target_position
-- [ ] Handles buffer timeout
-- [ ] Dummy mode works for testing
-
-## Testing Without Drone-1
-
-**Enable Dummy Mode**:
-
-```yaml
-telem_rx:
-  ros__parameters:
-    use_dummy_geotags: true
-    dummy_lat: 10.0480
-    dummy_lon: 76.3305
-    dummy_alt: 10.0
-    dummy_interval_sec: 30.0
-```
-
-**Monitor Output**:
-
-```bash
-ros2 topic echo /drone2/target_position
-```
-
-## Common Issues
-
-**Issue**: No targets received  
-**Solution**: Check radio link, verify Drone-1 transmitting
-
-**Issue**: Invalid coordinates rejected  
-**Solution**: Check `max_distance_from_home_m` and home position set
-
-**Issue**: Buffer timeout  
-**Solution**: Radio link quality issue, messages not arriving together
-
-## Simulation Mode Testing (use_dummy_geotags)
-
-### Dummy Mode for SITL Testing
-
-The node includes built-in simulation mode - use `use_dummy_geotags: true` to test without Drone-1:
-
-```yaml
-# config/telem_rx_params.yaml
-telem_rx:
-  ros__parameters:
-    use_dummy_geotags: true # <-- Enable simulation mode
-    dummy_lat: 10.0480
-    dummy_lon: 76.3305
-    dummy_alt: 10.0
-    dummy_interval_sec: 30.0 # Publish test target every 30s
-```
-
-### Quick SITL Test
-
-```bash
-# Terminal 1: ArduPilot SITL
-cd ~/ardupilot/ArduCopter
-sim_vehicle.py -v ArduCopter --console --map -l 10.0478,76.3303,0,0 -w
-
-# Terminal 2: MAVROS
-ros2 launch mavros apm.launch.py fcu_url:=udp://:14550@127.0.0.1:14555
-
-# Terminal 3: Telem RX with dummy mode
-cd ~/Documents/ROSArkairo/drone2_ws && source install/setup.zsh
-ros2 run telem_rx telem_rx_node --ros-args -p use_dummy_geotags:=true
-
-# Terminal 4: Monitor targets
-ros2 topic echo /drone2/target_position
-```
-
-### Manual Target Injection (Alternative)
-
-```bash
-ros2 topic pub /drone2/target_position sensor_msgs/msg/NavSatFix \
-  "{latitude: 10.0481, longitude: 76.3306, altitude: 10.0}" --once
+Drone-1 (telem_tx) → MAVLink Radio → telem_rx → /drone2/target_position → Navigation Node
 ```
 
 ---
 
-**Last Updated**: December 31, 2025  
-**Maintainer**: Shaan Shoukath
+**Last Updated**: January 2, 2026

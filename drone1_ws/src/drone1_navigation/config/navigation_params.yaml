@@ -1,18 +1,32 @@
+# =============================================================================
 # Drone-1 Navigation Configuration
+# =============================================================================
+# Author: Shaan Shoukath
 # Sequential waypoint following from KML lane planner
+# =============================================================================
+
 /**:
   ros__parameters:
+    # =========================================================================
+    # ALTITUDE SETTINGS (meters) - 22 feet = 6.7m
+    # =========================================================================
+    # >>> CHANGE THIS VALUE FOR DIFFERENT FLIGHT HEIGHTS <<<
+
+    # Mission altitude: Takeoff and survey height
+    mission_altitude: 6.7
+
+    # =========================================================================
+    # NAVIGATION SETTINGS
+    # =========================================================================
     # Setpoint publishing rate (Hz) - MUST BE ≥10Hz for ArduPilot GUIDED mode
     setpoint_rate_hz: 10.0
-
-    # Mission altitude (meters) - Takeoff and survey altitude
-    mission_altitude: 50.0
 
     # Waypoint acceptance radius (meters)
     waypoint_radius_m: 3.0
 
-    # Timeout settings (seconds)
+    # =========================================================================
+    # TIMEOUT SETTINGS (seconds)
+    # =========================================================================
     fcu_timeout_sec: 30.0 # Timeout waiting for FCU connection
     arming_timeout_sec: 60.0 # Timeout waiting for arming
     takeoff_timeout_sec: 90.0 # Timeout waiting for takeoff complete
-

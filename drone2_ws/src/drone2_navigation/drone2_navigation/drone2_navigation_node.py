@@ -152,10 +152,16 @@ class Drone2NavigationNode(Node):
         # ================================================================
         # SUBSCRIBERS
         # ================================================================
-        # Use sensor_qos for target_position (flexible for ros2 topic pub testing)
+        # QoS for target_position: BEST_EFFORT reliability (matches ros2 topic pub)
+        # TRANSIENT_LOCAL durability allows receiving from both VOLATILE and TRANSIENT_LOCAL publishers
+        target_pos_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            depth=10
+        )
         self.create_subscription(
             NavSatFix, '/drone2/target_position',
-            self.target_callback, sensor_qos
+            self.target_callback, target_pos_qos
         )
         self.create_subscription(
             State, '/mavros/state',

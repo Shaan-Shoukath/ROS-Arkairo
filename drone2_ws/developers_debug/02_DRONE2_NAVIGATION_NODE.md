@@ -84,6 +84,33 @@ ros2 run drone2_navigation drone2_navigation_node --ros-args --params-file src/d
 ros2 topic pub /drone2/target_position sensor_msgs/msg/NavSatFix "{latitude: 10.0481, longitude: 76.3306, altitude: 10.0}" --once
 ```
 
+## Troubleshooting
+
+### QoS Incompatibility Warning
+
+**Symptom:**
+```
+[WARN] New publisher discovered on topic '/drone2/target_position', offering incompatible QoS. 
+No messages will be received from it. Last incompatible policy: RELIABILITY
+```
+
+**Cause:**  
+ROS2 QoS mismatch between publisher and subscriber. Both must use matching:
+- **Reliability**: BEST_EFFORT or RELIABLE (both must match)
+- **Durability**: TRANSIENT_LOCAL or VOLATILE (subscriber can be equal or less strict)
+
+**Fix:**  
+Both `telem_rx_node` and `drone2_navigation_node` now use:
+```python
+QoSProfile(
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    depth=10
+)
+```
+
+This also matches `ros2 topic pub --qos-reliability best_effort` (which defaults to TRANSIENT_LOCAL durability).
+
 ---
 
-**Last Updated**: January 2, 2026
+**Last Updated**: January 5, 2026

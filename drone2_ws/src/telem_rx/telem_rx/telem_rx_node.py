@@ -98,6 +98,14 @@ class TelemRxNode(Node):
             depth=10
         )
         
+        # QoS for target_position: BEST_EFFORT + TRANSIENT_LOCAL
+        # Matches drone2_navigation_node subscriber exactly
+        target_pos_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            depth=10
+        )
+        
         # Subscriber: MAVLink debug value (from MAVROS) - only if not dummy mode
         if not self.use_dummy:
             self.mavlink_sub = self.create_subscription(
@@ -108,10 +116,11 @@ class TelemRxNode(Node):
             )
         
         # Publishers: Navigation target and trigger
+        # Use target_pos_qos (BEST_EFFORT + TRANSIENT_LOCAL) to match subscriber
         self.position_pub = self.create_publisher(
             NavSatFix,
             '/drone2/target_position',
-            reliable_qos
+            target_pos_qos
         )
         
         self.trigger_pub = self.create_publisher(

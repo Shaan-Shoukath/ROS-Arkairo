@@ -9,40 +9,64 @@
 
 ## Purpose
 
-Controls the spray mechanism when triggered by the detection/centering node. Activates pump/relay when spray_ready signal received.
+Controls sprayer pump/relay when triggered by detection node. Supports both simulation (PWM topic) and hardware (MAVROS servo/relay).
 
-## Key Parameters
+---
 
-Located in: `config/sprayer_params.yaml`
-
-```yaml
-use_sim: true # true = PWM topic, false = MAVROS servo
-servo_channel: 10 # ArduPilot servo channel
-spray_pwm: 1900 # PWM value when spraying
-idle_pwm: 1100 # PWM value when idle
-```
-
-## Subscribers
-
-| Topic                 | Type | Purpose                     |
-| --------------------- | ---- | --------------------------- |
-| `/drone2/spray_ready` | Bool | Trigger from detection node |
-
-## Publishers
-
-| Topic                 | Type         | Purpose                    |
-| --------------------- | ------------ | -------------------------- |
-| `/mavros/rc/override` | OverrideRCIn | PWM commands (sim mode)    |
-| MAVROS servo command  | -            | Hardware servo (real mode) |
-
-## Integration Flow
+## Hardware Preconditions
 
 ```
-Detection Node → spray_ready=true → Sprayer Node → Activate pump
-                                                 → Wait spray_duration
-Detection Node → spray_ready=false → Sprayer Node → Deactivate pump
+Relay Module ───► Cube Orange+ AUX5 (GPIO 54)
+Pump ───► Relay NO/COM terminals
+12V Battery ───► Relay power
+```
+
+## ArduPilot Parameters
+
+```
+RELAY_PIN = 54           # AUX5 GPIO
+RELAY_DEFAULT = 0        # OFF at startup
+BRD_SAFETYENABLE = 0     # Disable safety for testing
 ```
 
 ---
 
-**Last Updated**: January 2, 2026
+## Key Parameters
+
+```yaml
+use_sim: true # PWM topic vs hardware
+pwm_channel: 9
+pwm_off: 1000
+pwm_on: 2000
+spray_duration_sec: 5.0
+servo_channel: 10
+```
+
+---
+
+## Subscribers
+
+| Topic                 | Type | Purpose                |
+| --------------------- | ---- | ---------------------- |
+| `/drone2/spray_ready` | Bool | Trigger from detection |
+
+## Publishers
+
+| Topic                 | Type         | Purpose        |
+| --------------------- | ------------ | -------------- |
+| `/mavros/rc/override` | OverrideRCIn | PWM (sim)      |
+| MAVROS servo command  | -            | Hardware relay |
+
+---
+
+## Pump Test
+
+```bash
+ros2 run sprayer_control pump_test --ros-args \
+  -p relay_num:=0 \
+  -p on_time_sec:=3.0
+```
+
+---
+
+**Last Updated**: January 5, 2026

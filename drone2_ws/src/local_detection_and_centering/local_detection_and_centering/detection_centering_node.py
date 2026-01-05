@@ -33,6 +33,7 @@ from std_msgs.msg import Bool, Header
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from vision_msgs.msg import BoundingBox2D
+from mavros_msgs.msg import StatusText
 from cv_bridge import CvBridge
 
 
@@ -226,6 +227,11 @@ class DetectionCenteringNode(Node):
         
         self.status_pub = self.create_publisher(
             Bool, '/drone2/detection_status', reliable_qos
+        )
+        
+        # MAVLink status text (visible in Mission Planner)
+        self.statustext_pub = self.create_publisher(
+            StatusText, '/mavros/statustext/send', 10
         )
         
         # Control timer
@@ -501,6 +507,19 @@ class DetectionCenteringNode(Node):
         msg.data = detected
         self.status_pub.publish(msg)
     
+    def _send_statustext(self, text: str, severity: int = 6):
+        """
+        Send status text to Mission Planner via MAVLink.
+        
+        Severity levels:
+            0 = EMERGENCY, 1 = ALERT, 2 = CRITICAL, 3 = ERROR
+            4 = WARNING, 5 = NOTICE, 6 = INFO, 7 = DEBUG
+        """
+        msg = StatusText()
+        msg.severity = severity
+        msg.text = text[:50]  # MAVLink limit is 50 chars
+        self.statustext_pub.publish(msg)
+    
     def _transition_to(self, new_state: State):
         """Transition to new state."""
         old_state = self.state
@@ -518,7 +537,21 @@ class DetectionCenteringNode(Node):
             self._stop_motion()
             self.current_bbox = None
         
+        # Log state change
         self.get_logger().info(f'State: {old_state.name} → {new_state.name}')
+        
+        # Send to Mission Planner
+        status_messages = {
+            State.DETECTING: "D2: Detecting disease...",
+            State.CENTERING: "D2: Centering on target",
+            State.DESCENDING: "D2: Descending to spray",
+            State.SPRAYING: "D2: SPRAYING",
+            State.ASCENDING: "D2: Ascending to nav alt",
+            State.COMPLETED: "D2: Spray complete!",
+            State.IDLE: "D2: Ready for target",
+        }
+        if new_state in status_messages:
+            self._send_statustext(status_messages[new_state])
     
     def _get_state_elapsed(self) -> float:
         """Get time elapsed in current state (seconds)."""

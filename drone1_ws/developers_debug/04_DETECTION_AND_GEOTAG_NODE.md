@@ -9,71 +9,71 @@
 
 ## Purpose
 
-Detects yellow plant disease using computer vision and computes GPS geotags by projecting pixel coordinates to world coordinates using drone altitude and IMU orientation.
+Detects yellow disease using HSV color thresholding and computes GPS geotags by projecting pixel coordinates to world coordinates using drone altitude and IMU orientation.
 
-## Features
+---
 
-- HSV color thresholding for yellow disease
-- Green vegetation context validation
-- Sand/soil exclusion filtering
-- Shape-based validation (aspect ratio, compactness)
-- GPS geotagging with deduplication
-- Severity classification (MILD/MODERATE/SEVERE)
-- Ray-casting GPS projection using IMU
+## Hardware Preconditions
+
+```
+Pi Camera 3 ─── CSI ───► Raspberry Pi 5
+Camera pointing straight down
+GPS ───► Cube Orange+ (for geotag computation)
+```
+
+## ArduPilot Parameters
+
+```
+# GPS required for geotagging
+GPS_TYPE = 1             # Auto
+GPS_GNSS_MODE = 0        # All constellations
+```
+
+---
 
 ## Key Parameters
 
-Located in: `config/detection_params.yaml`
-
 ```yaml
-# Camera (720p square)
 image_width: 720
 image_height: 720
-target_fps: 10.0 # Frame processing rate
+target_fps: 10.0
 
-# Yellow disease HSV range
+# Yellow HSV range
 yellow_h_min: 15
 yellow_h_max: 40
 yellow_s_min: 80
 yellow_v_min: 80
 
-# Detection thresholds
-min_detection_area: 250 # Min pixels for detection
-gps_dedup_distance_m: 3.0 # Deduplication radius
+min_detection_area: 250
+gps_dedup_distance_m: 3.0
 ```
+
+---
 
 ## Subscribers
 
-| Topic                            | Type        | Purpose                     |
-| -------------------------------- | ----------- | --------------------------- |
-| `/camera/image_raw`              | Image       | Camera frames               |
-| `/mavros/global_position/global` | NavSatFix   | Drone GPS                   |
-| `/mavros/imu/data`               | Imu         | Orientation for ray-casting |
-| `/mavros/local_position/pose`    | PoseStamped | Altitude                    |
-| `/drone1/detection_enable`       | Bool        | Enable/disable from nav     |
+| Topic                            | Type        | Purpose       |
+| -------------------------------- | ----------- | ------------- |
+| `/camera/image_raw`              | Image       | Camera frames |
+| `/mavros/global_position/global` | NavSatFix   | Drone GPS     |
+| `/mavros/imu/data`               | Imu         | Orientation   |
+| `/mavros/local_position/pose`    | PoseStamped | Altitude      |
 
 ## Publishers
 
-| Topic                     | Type            | Purpose             |
-| ------------------------- | --------------- | ------------------- |
-| `/drone1/disease_geotag`  | GeoPointStamped | Detection GPS       |
-| `/drone1/detection_debug` | Image           | Debug visualization |
+| Topic                     | Type            | Purpose       |
+| ------------------------- | --------------- | ------------- |
+| `/drone1/disease_geotag`  | GeoPointStamped | For telem_tx  |
+| `/drone1/detection_debug` | Image           | Visualization |
+
+---
 
 ## Detection Pipeline
 
 ```
-Camera Frame → HSV → Yellow/Green/Brown Masks → Morphological Filtering
-    → Contour Detection → Validation → Ray-casting GPS → Deduplication → Publish
+Camera → HSV → Yellow Mask → Morphology → Contours → Validation → Ray-casting → Geotag
 ```
-
-## Severity Classification
-
-| Area (pixels) | Severity |
-| ------------- | -------- |
-| < 500         | MILD     |
-| 500 - 1000    | MODERATE |
-| > 1000        | SEVERE   |
 
 ---
 
-**Last Updated**: January 2, 2026
+**Last Updated**: January 5, 2026

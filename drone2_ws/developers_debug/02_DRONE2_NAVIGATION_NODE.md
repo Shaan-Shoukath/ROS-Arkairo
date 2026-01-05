@@ -9,45 +9,59 @@
 
 ## Purpose
 
-Receives GPS geotags from Drone-1 via telemetry and navigates to each location for spraying. Features timeout-based RTL, dynamic target acceptance, and resumable navigation.
+Receives GPS geotags from Drone-1 via telemetry and navigates to each location for spraying at 22 feet altitude. Features timeout-based RTL and dynamic target acceptance.
+
+---
+
+## Hardware Preconditions
+
+```
+Raspberry Pi 5 ─── UART/USB ───► Cube Orange+
+Sprayer Relay ───► Cube AUX Output
+Telemetry Radio ───► Cube TELEM1
+GPS ───► Cube Orange+
+```
+
+## ArduPilot Parameters
+
+```
+SERIAL1_PROTOCOL = 2     # TELEM1 = MAVLink2 (radio)
+SERIAL1_BAUD = 57        # 57600
+SERIAL2_PROTOCOL = 2     # TELEM2 = MAVLink2 (Pi)
+SERIAL2_BAUD = 921       # 921600
+MAV_FORWARD = 1          # Forward messages
+SYSID_THISMAV = 2        # Drone 2 system ID
+RELAY_PIN = 54           # Sprayer relay (AUX5)
+```
+
+---
 
 ## State Machine
 
 ```
-IDLE → WAIT_FCU → WAIT_TARGET → SET_GUIDED → ARM → TAKEOFF → WAIT_TAKEOFF → NAVIGATE → ARRIVED → WAIT_FOR_NEXT → RTL → LANDED
-                       ↑                                                        │
-                       └────────────────────────────────────────────────────────┘
+IDLE → WAIT_FCU → WAIT_TARGET → SET_GUIDED → ARM → TAKEOFF → WAIT_TAKEOFF
+    → NAVIGATE → ARRIVED → WAIT_FOR_NEXT → (new target or RTL)
 ```
-
-## Key Features
-
-- **Dynamic Target Acceptance**: New geotags accepted in any flight state
-- **RTL Resume**: If RTL triggered by timeout, can resume on new target
-- **Wait Countdown**: Visible countdown during WAIT_FOR_NEXT state
-- **Arrival Status**: Publishes to trigger detection node
 
 ## Key Parameters
 
-Located in: `config/navigation_params.yaml`
-
 ```yaml
-# >>> CHANGE THESE FOR DIFFERENT FLIGHT HEIGHT <<<
 takeoff_altitude_m: 6.7 # 22 feet
 navigation_altitude_m: 6.7 # 22 feet
-
-arrival_radius_m: 3.0 # Consider "arrived" within this distance
-wait_timeout_sec: 15.0 # Wait for next geotag before RTL
-setpoint_rate_hz: 10.0 # Must be ≥10Hz
+arrival_radius_m: 3.0 # Consider "arrived"
+wait_timeout_sec: 15.0 # Wait before RTL
+setpoint_rate_hz: 10.0 # ≥10Hz required
 ```
+
+---
 
 ## Subscribers
 
-| Topic                            | Type        | Purpose               |
-| -------------------------------- | ----------- | --------------------- |
-| `/drone2/target_position`        | NavSatFix   | Geotag from telem_rx  |
-| `/mavros/state`                  | State       | FCU connection & mode |
-| `/mavros/local_position/pose`    | PoseStamped | Current position      |
-| `/mavros/global_position/global` | NavSatFix   | GPS position          |
+| Topic                         | Type        | Purpose              |
+| ----------------------------- | ----------- | -------------------- |
+| `/drone2/target_position`     | NavSatFix   | Geotag from telem_rx |
+| `/mavros/state`               | State       | FCU status           |
+| `/mavros/local_position/pose` | PoseStamped | Current position     |
 
 ## Publishers
 
@@ -57,59 +71,14 @@ setpoint_rate_hz: 10.0 # Must be ≥10Hz
 | `/drone2/arrival_status`          | Bool        | Triggers detection node |
 | `/drone2/navigation_status`       | String      | Current state           |
 
-## SITL Testing
+---
 
-### T1: SITL
-
-```bash
-cd ~/ardupilot/ArduCopter && sim_vehicle.py -v ArduCopter --console --map -l 10.0478,76.3303,0,0 -w
-```
-
-### T2: MAVROS
+## Launch Command
 
 ```bash
-ros2 launch mavros apm.launch.py fcu_url:=udp://:14550@127.0.0.1:14555
+ros2 run drone2_navigation drone2_navigation_node --ros-args \
+  --params-file src/drone2_navigation/config/navigation_params.yaml
 ```
-
-### T3: Navigation Node
-
-```bash
-cd ~/Documents/ROSArkairo/drone2_ws && source install/setup.zsh
-ros2 run drone2_navigation drone2_navigation_node --ros-args --params-file src/drone2_navigation/config/navigation_params.yaml
-```
-
-### T4: Send Target
-
-```bash
-ros2 topic pub /drone2/target_position sensor_msgs/msg/NavSatFix "{latitude: 10.0481, longitude: 76.3306, altitude: 10.0}" --once
-```
-
-## Troubleshooting
-
-### QoS Incompatibility Warning
-
-**Symptom:**
-```
-[WARN] New publisher discovered on topic '/drone2/target_position', offering incompatible QoS. 
-No messages will be received from it. Last incompatible policy: RELIABILITY
-```
-
-**Cause:**  
-ROS2 QoS mismatch between publisher and subscriber. Both must use matching:
-- **Reliability**: BEST_EFFORT or RELIABLE (both must match)
-- **Durability**: TRANSIENT_LOCAL or VOLATILE (subscriber can be equal or less strict)
-
-**Fix:**  
-Both `telem_rx_node` and `drone2_navigation_node` now use:
-```python
-QoSProfile(
-    reliability=ReliabilityPolicy.BEST_EFFORT,
-    durability=DurabilityPolicy.TRANSIENT_LOCAL,
-    depth=10
-)
-```
-
-This also matches `ros2 topic pub --qos-reliability best_effort` (which defaults to TRANSIENT_LOCAL durability).
 
 ---
 

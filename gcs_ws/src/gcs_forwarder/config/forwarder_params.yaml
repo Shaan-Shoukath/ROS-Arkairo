@@ -1,0 +1,20 @@
+# =============================================================================
+# GCS Forwarder Configuration
+# =============================================================================
+# Relays geotags from Drone 1 to Drone 2
+# =============================================================================
+
+forwarder:
+  # Serial ports for telemetry radios
+  drone1_port: "/dev/ttyUSB0" # Drone 1 radio (Pair A Ground)
+  drone2_port: "/dev/ttyUSB1" # Drone 2 radio (Pair B Ground)
+
+  # Communication settings
+  baud_rate: 57600 # Must match radio settings
+
+  # Filtering
+  source_sysid: 1 # Only forward from Drone 1
+  geotag_prefix: "GEOTAG:" # Message prefix to identify geotags
+
+  # Duplicate handling
+  ignore_duplicates: true # Skip identical consecutive messages

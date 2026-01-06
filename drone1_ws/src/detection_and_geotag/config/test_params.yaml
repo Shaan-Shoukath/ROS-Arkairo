@@ -39,7 +39,7 @@
 
     mock_latitude: 10.0478 # Base latitude
     mock_longitude: 76.3303 # Base longitude
-    mock_altitude: 15.0 # Simulated flight altitude (meters)
+    mock_altitude: 6.7 # 22 feet
     mock_drift_rate: 0.00001 # GPS drift per detection (simulates movement)
 
     # =========================================================================

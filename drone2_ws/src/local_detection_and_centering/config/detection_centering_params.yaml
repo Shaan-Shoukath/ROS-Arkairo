@@ -57,8 +57,8 @@ detection_centering_node:
     navigation_altitude_m: 6.7
     centering_altitude_m: 6.7 # Same as navigation for calibration
 
-    # Spray altitude: Target height for spraying (lower for accuracy)
-    spray_altitude_m: 3.0
+    # Spray altitude: Target height for spraying (8 feet = 2.44m)
+    spray_altitude_m: 2.44
 
     # Velocity settings
     descent_velocity_mps: 0.3 # Descent speed (m/s)

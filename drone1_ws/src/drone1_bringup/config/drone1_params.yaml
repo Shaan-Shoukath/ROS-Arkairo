@@ -8,7 +8,7 @@ kml_lane_planner_node:
   ros__parameters:
     lane_width: 10.0
     overlap_percent: 20.0
-    altitude: 30.0
+    altitude: 6.7 # 22 feet = 6.7m
     kml_directory: "/home/user/kml_missions"
     home_latitude: 0.0
     home_longitude: 0.0

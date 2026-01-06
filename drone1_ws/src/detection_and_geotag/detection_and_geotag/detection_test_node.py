@@ -92,7 +92,7 @@ class DetectionTestNode(Node):
         # Mock GPS settings (only used when use_sim=true)
         self.declare_parameter('mock_latitude', 10.0478)
         self.declare_parameter('mock_longitude', 76.3303)
-        self.declare_parameter('mock_altitude', 15.0)
+        self.declare_parameter('mock_altitude', 6.7)  # 22 feet
         self.declare_parameter('mock_drift_rate', 0.00001)  # GPS drift per detection
         
         # Yellow detection HSV (live adjustable)

@@ -22,6 +22,7 @@ setup(
     entry_points={
         'console_scripts': [
             'image_capture_node = image_capture.image_capture_node:main',
+            'publish_test_image = image_capture.publish_test_image:main',
         ],
     },
 )

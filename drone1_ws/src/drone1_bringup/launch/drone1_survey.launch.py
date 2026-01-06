@@ -82,7 +82,7 @@ def generate_launch_description():
                     FindPackageShare('image_capture'),
                     'config', 'camera_params.yaml'
                 ]),
-                {'use_usb_camera': use_sim}
+                {'use_sim': use_sim}  # True = laptop webcam, False = Pi Camera
             ],
             arguments=['--ros-args', '--log-level', log_level]
         ),

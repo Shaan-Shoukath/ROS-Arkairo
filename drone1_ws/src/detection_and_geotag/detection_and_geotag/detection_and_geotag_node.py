@@ -196,7 +196,7 @@ class DetectionAndGeotagNode(Node):
         # ═══════════════════════════════════════════════════════════════════
         self.current_gps: Optional[NavSatFix] = None
         self.current_imu: Optional[Imu] = None
-        self.current_altitude: float = 10.0
+        self.current_altitude: float = 6.7  # 22 feet default
         self.logged_locations: List[Tuple[float, float]] = []
         self.detection_counter = 0
         self.detection_enabled = True  # Start enabled, nav node controls this

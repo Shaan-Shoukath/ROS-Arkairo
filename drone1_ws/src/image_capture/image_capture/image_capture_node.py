@@ -11,6 +11,9 @@ survey flight. Supports USB cameras via OpenCV.
 Publishers:
     /camera/image_raw (sensor_msgs/Image): Raw camera images
     /camera/camera_info (sensor_msgs/CameraInfo): Camera calibration info
+
+Subscribers (SITL only):
+    /camera/inject_test_image (sensor_msgs/Image): Injected test images
 """
 
 import cv2
@@ -40,7 +43,7 @@ class ImageCaptureNode(Node):
         
         # Camera device settings
         self.declare_parameter('camera_device', '/dev/video0')  # USB camera path
-         self.declare_parameter('webcam_index', 0)  # Laptop webcam index for SITL
+        self.declare_parameter('webcam_index', 0)  # Laptop webcam index for SITL
         self.declare_parameter('pi_camera_device', '/dev/video0')  # Pi Camera via v4l2
         
         # Resolution and frame rate
@@ -87,6 +90,9 @@ class ImageCaptureNode(Node):
         # OpenCV bridge
         self.bridge = CvBridge()
         
+        # Test image injection (SITL mode only)
+        self.injected_frame: Optional[np.ndarray] = None
+        
         # Camera capture
         self.cap: Optional[cv2.VideoCapture] = None
         self._init_camera()
@@ -113,6 +119,16 @@ class ImageCaptureNode(Node):
         
         # Create camera info message (static)
         self.camera_info_msg = self._create_camera_info()
+        
+        # Test image injection subscriber (SITL mode only)
+        if self.use_sim:
+            self.inject_sub = self.create_subscription(
+                Image,
+                '/camera/inject_test_image',
+                self.inject_callback,
+                10
+            )
+            self.get_logger().info('  Test injection: ENABLED (/camera/inject_test_image)')
         
         # Capture timer
         self.capture_timer = self.create_timer(
@@ -218,7 +234,12 @@ class ImageCaptureNode(Node):
         """Capture and publish camera frame."""
         timestamp = self.get_clock().now().to_msg()
         
-        if self.cap is not None and self.cap.isOpened():
+        # Check for injected test image first (SITL mode)
+        if self.injected_frame is not None:
+            frame = self.injected_frame
+            self.injected_frame = None  # Clear after use (one-shot)
+            self.get_logger().info('📸 Publishing injected test image')
+        elif self.cap is not None and self.cap.isOpened():
             ret, frame = self.cap.read()
             
             if not ret:
@@ -244,6 +265,21 @@ class ImageCaptureNode(Node):
             
         except Exception as e:
             self.get_logger().error(f'Image conversion error: {e}')
+    
+    def inject_callback(self, msg: Image):
+        """
+        Receive injected test image for SITL testing.
+        
+        When an image is received on /camera/inject_test_image, it will be
+        published as the next frame on /camera/image_raw instead of camera feed.
+        """
+        try:
+            self.injected_frame = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+            self.get_logger().info(
+                f'🎯 Test image received ({self.injected_frame.shape[1]}x{self.injected_frame.shape[0]})'
+            )
+        except Exception as e:
+            self.get_logger().error(f'Failed to convert injected image: {e}')
     
     def _generate_test_image(self) -> np.ndarray:
         """Generate test image for simulation."""

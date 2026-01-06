@@ -85,8 +85,8 @@ class Drone1FlightController(Node):
         # ====================================================================
         # PARAMETERS
         # ====================================================================
-        self.declare_parameter('takeoff_altitude_m', 50.0)
-        self.declare_parameter('navigation_altitude_m', 50.0)
+        self.declare_parameter('takeoff_altitude_m', 6.7)  # 22 feet
+        self.declare_parameter('navigation_altitude_m', 6.7)  # 22 feet
         self.declare_parameter('waypoint_arrival_radius_m', 3.0)
         self.declare_parameter('path_lookahead_m', 12.0)
         self.declare_parameter('path_max_target_step_m', 25.0)
@@ -483,6 +483,40 @@ class Drone1FlightController(Node):
         future = self.param_client.call_async(request)
         self.get_logger().info("Setting DISARM_DELAY=0 for SITL testing")
         self.log("DISARM_DELAY=0 set via MAVROS")
+
+        # Set RTL_ALT to 0 = maintain current altitude during RTL
+        # ArduPilot uses centimeters as INTEGER for RTL_ALT
+        rtl_request = ParamSetV2.Request()
+        rtl_request.param_id = 'RTL_ALT'
+        rtl_request.value = ParameterValue()
+        rtl_request.value.type = ParameterType.PARAMETER_INTEGER
+        rtl_request.value.integer_value = 0  # 0 = maintain current altitude
+        
+        future = self.param_client.call_async(rtl_request)
+        future.add_done_callback(self._rtl_param_callback)
+        self.get_logger().info("Setting RTL_ALT=0 (maintain current altitude)")
+        
+        # Also set RTL_ALT_FINAL to 0 (land immediately when home)
+        rtl_final_request = ParamSetV2.Request()
+        rtl_final_request.param_id = 'RTL_ALT_FINAL'
+        rtl_final_request.value = ParameterValue()
+        rtl_final_request.value.type = ParameterType.PARAMETER_INTEGER
+        rtl_final_request.value.integer_value = 0  # Land immediately
+        
+        self.param_client.call_async(rtl_final_request)
+        self.get_logger().info("Setting RTL_ALT_FINAL=0 (land on arrival)")
+        self.log("RTL_ALT=0, RTL_ALT_FINAL=0 set via MAVROS")
+    
+    def _rtl_param_callback(self, future):
+        """Callback to verify RTL_ALT was set."""
+        try:
+            result = future.result()
+            if result.success:
+                self.get_logger().info("✅ RTL_ALT parameter set successfully")
+            else:
+                self.get_logger().warn(f"⚠️ RTL_ALT parameter set failed - check param service")
+        except Exception as e:
+            self.get_logger().error(f"RTL_ALT param error: {e}")
 
     def handle_arm(self):
         """

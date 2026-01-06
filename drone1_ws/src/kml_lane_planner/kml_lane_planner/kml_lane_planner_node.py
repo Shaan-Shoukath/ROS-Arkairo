@@ -47,7 +47,7 @@ from drone1_msgs.msg import Waypoint, LaneSegment, LaneSegmentArray
 @dataclass
 class MissionConfig:
     """Mission configuration parameters."""
-    altitude: float = 10.0
+    altitude: float = 6.7  # 22 feet
     spacing: float = 5.0
     buffer_distance: float = 2.0
     home_lat: float = 0.0
@@ -464,7 +464,7 @@ class KmlLanePlannerNode(Node):
         self.declare_parameter('missions_folder', 'missions')
         self.declare_parameter('kml_filename', '')  # Specific KML file to load
         self.declare_parameter('altitude_m', 6.7)  # 22 feet
-        self.declare_parameter('lane_spacing_m', 5.0)
+        self.declare_parameter('lane_spacing_m', 15.0)  # Distance between parallel lines
         self.declare_parameter('buffer_distance_m', 2.0)
         self.declare_parameter('watch_interval_sec', 2.0)
         self.declare_parameter('enable_republish', False)  # Prefer TRANSIENT_LOCAL over periodic republish

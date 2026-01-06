@@ -12,7 +12,15 @@
     # File watching
     watch_interval_sec: 2.0 # How often to check for new KML files
 
-    # Home position (for SITL/testing without GPS)
-    require_gps_home: false # Use default home for SITL
-    default_home_lat: 10.0478 # 10°02'52"N
-    default_home_lon: 76.3303 # 76°19'49"E
+    # =========================================================================
+    # START LOCATION SETTINGS (Competition Setup)
+    # =========================================================================
+    # >>> SET THESE FOR YOUR COMPETITION FIELD <<<
+
+    # If true, use live GPS position as home; if false, use defaults below
+    require_gps_home: false
+    
+    # Custom start/home location (used when require_gps_home: false)
+    # Set these to your competition field coordinates
+    default_home_lat: 10.0478    # Latitude in decimal degrees (10°02'52"N)
+    default_home_lon: 76.3303    # Longitude in decimal degrees (76°19'49"E)

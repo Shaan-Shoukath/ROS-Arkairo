@@ -41,12 +41,21 @@ IDLE → WAIT_FCU → SET_GUIDED → ARM → TAKEOFF → WAIT_TAKEOFF → NAVIGA
 ## Key Parameters
 
 ```yaml
-mission_altitude: 6.7 # 22 feet
-setpoint_rate_hz: 10.0 # ≥10Hz required
-waypoint_radius_m: 3.0 # Arrival tolerance
+# Altitude & Navigation
+mission_altitude: 6.7      # 22 feet
+setpoint_rate_hz: 10.0     # ≥10Hz required
+waypoint_radius_m: 3.0     # Arrival tolerance
+
+# Timeouts
 fcu_timeout_sec: 30.0
 arming_timeout_sec: 60.0
 takeoff_timeout_sec: 90.0
+
+# Start Location (Competition Setup)
+use_gps_home: true         # true = GPS lock, false = use config below
+start_latitude: 10.0478    # Custom start latitude
+start_longitude: 76.3303   # Custom start longitude
+start_altitude_m: 0.0      # Ground altitude (meters)
 ```
 
 ---

@@ -14,8 +14,15 @@ Parses KML files to generate survey lane waypoints for Drone-1. Converts GPS pol
 ## Key Parameters
 
 ```yaml
-kml_file_path: "field.kml" # Input KML file
-lane_spacing_m: 5.0 # Distance between lanes
+# Mission Planning
+kml_file_path: "field.kml"  # Input KML file
+lane_spacing_m: 5.0         # Distance between lanes
+altitude_m: 6.7             # Flight altitude (22 feet)
+
+# Start Location (Competition Setup)
+require_gps_home: false     # true = wait for GPS, false = use config below
+default_home_lat: 10.0478   # Custom home latitude
+default_home_lon: 76.3303   # Custom home longitude
 ```
 
 ## Subscribers

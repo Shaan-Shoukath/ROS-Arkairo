@@ -2,7 +2,7 @@
 <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
 <Document>
 	<name>Untitled map</name>
-	<gx:CascadingStyle kml:id="__managed_style_0C42CCF1443C95A0EB4F">
+	<gx:CascadingStyle kml:id="__managed_style_1BEDBD7BEE3CC8C71990">
 		<Style>
 			<IconStyle>
 				<scale>1.2</scale>
@@ -25,7 +25,7 @@
 			</BalloonStyle>
 		</Style>
 	</gx:CascadingStyle>
-	<gx:CascadingStyle kml:id="__managed_style_1B2927EEE23C95A0EB4E">
+	<gx:CascadingStyle kml:id="__managed_style_01F2E6563A3CC8C71990">
 		<Style>
 			<IconStyle>
 				<Icon>
@@ -47,34 +47,34 @@
 			</BalloonStyle>
 		</Style>
 	</gx:CascadingStyle>
-	<StyleMap id="__managed_style_0476ADCE883C95A0EB4E">
+	<StyleMap id="__managed_style_095E9C48443CC8C7198F">
 		<Pair>
 			<key>normal</key>
-			<styleUrl>#__managed_style_1B2927EEE23C95A0EB4E</styleUrl>
+			<styleUrl>#__managed_style_01F2E6563A3CC8C71990</styleUrl>
 		</Pair>
 		<Pair>
 			<key>highlight</key>
-			<styleUrl>#__managed_style_0C42CCF1443C95A0EB4F</styleUrl>
+			<styleUrl>#__managed_style_1BEDBD7BEE3CC8C71990</styleUrl>
 		</Pair>
 	</StyleMap>
-	<Placemark id="05E8B42BF83C81CFD37C">
-		<name>SOE</name>
+	<Placemark id="05F2A819013CC8C71971">
+		<name>Untitled polygon</name>
 		<LookAt>
-			<longitude>76.3314728999746</longitude>
-			<latitude>10.04829209997766</latitude>
-			<altitude>41.57170857873922</altitude>
-			<heading>0</heading>
-			<tilt>0</tilt>
-			<gx:fovy>35</gx:fovy>
-			<range>830.6573479349026</range>
+			<longitude>76.3315607199098</longitude>
+			<latitude>10.04821406026115</latitude>
+			<altitude>40.71466743157249</altitude>
+			<heading>-6.817799550348129</heading>
+			<tilt>9.75884301026972</tilt>
+			<gx:fovy>30.00000074</gx:fovy>
+			<range>996.3894211297156</range>
 			<altitudeMode>absolute</altitudeMode>
 		</LookAt>
-		<styleUrl>#__managed_style_0476ADCE883C95A0EB4E</styleUrl>
+		<styleUrl>#__managed_style_095E9C48443CC8C7198F</styleUrl>
 		<Polygon>
 			<outerBoundaryIs>
 				<LinearRing>
 					<coordinates>
-						76.3309685461541,10.04838542364991,0 76.33159875920489,10.04772939401201,0 76.33210638844416,10.0485753250986,0 76.33119056112504,10.04880792138805,0 76.3309685461541,10.04838542364991,0 
+						76.33027011434937,10.0480413596238,0 76.33018654308827,10.04791277517972,0 76.33038668656462,10.04778388176869,0 76.33042138007983,10.0479672047831,0 76.33027011434937,10.0480413596238,0 
 					</coordinates>
 				</LinearRing>
 			</outerBoundaryIs>

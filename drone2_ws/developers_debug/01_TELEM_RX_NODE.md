@@ -2,103 +2,106 @@
 
 ## Overview
 
-**File**: `drone2_ws/src/telem_rx/telem_rx/telem_rx_node.py`  
-**Package**: `telem_rx`  
-**Node Name**: `telem_rx_node`  
-**Author**: Shaan Shoukath
+| Property        | Value                                              |
+| --------------- | -------------------------------------------------- |
+| **File**        | `drone2_ws/src/telem_rx/telem_rx/telem_rx_node.py` |
+| **Package**     | `telem_rx`                                         |
+| **Node Name**   | `telem_rx_node`                                    |
+| **Config File** | `telem_rx/config/telem_rx_params.yaml`             |
+| **Maintainer**  | Shaan Shoukath                                     |
 
 ## Purpose
 
-Receives disease geotags from Drone-1 via MAVLink telemetry, validates coordinates, and dispatches to navigation for spraying. Direct drone-to-drone communication without GCS.
+Receives disease geotags from Drone-1 via MAVLink telemetry, validates coordinates, and dispatches to navigation. Supports STATUSTEXT and NAMED_VALUE_FLOAT modes.
 
 ---
 
-## Hardware Preconditions
+## Configuration YAML → Code Mapping
 
-```
-Raspberry Pi 5 (companion) ─── UART ───► Cube Orange+ TELEM2
-Cube Orange+ TELEM1 ───────────────────► Telemetry Radio (AIR)
-```
-
-## ArduPilot Parameters (MUST SET)
-
-```
-SERIAL1_PROTOCOL = 2     # TELEM1 = MAVLink2 (radio)
-SERIAL1_BAUD = 57        # 57600
-SERIAL2_PROTOCOL = 2     # TELEM2 = MAVLink2 (Pi)
-SERIAL2_BAUD = 921       # 921600
-MAV_FORWARD = 1          # CRITICAL: Forward messages between ports
-SYSID_THISMAV = 2        # Drone 2 system ID
+```yaml
+# telem_rx_params.yaml                    # Python code usage
+use_statustext: true              →  self.use_statustext (True=STATUSTEXT, False=NAMED_VALUE_FLOAT)
+buffer_timeout_sec: 5.0           →  self.buffer_timeout
+validate_coordinates: true        →  self.validate_coords
+max_distance_from_home_m: 10000.0 →  self.max_distance
+home_latitude: 10.0478            →  self.home_lat
+home_longitude: 76.3303           →  self.home_lon
+use_dummy_geotags: false          →  self.use_dummy (testing mode)
+dummy_lat: 10.0480                →  self.dummy_lat
+dummy_lon: 76.3305                →  self.dummy_lon
+dummy_interval_sec: 10.0          →  Timer interval for dummy geotag publishing
 ```
 
-## Telemetry Radio Settings
+### Parameter Declaration Pattern
 
+```python
+# In __init__():
+self.declare_parameter('use_statustext', True)    # Declare with default
+self.use_statustext = self.get_parameter('use_statustext').value  # Retrieve
 ```
-Baud Rate: 57600
-Net ID: Same as Drone 1
-TX Power: 20 dBm
-Air Speed: 64 kbps
-```
+
+---
+
+## Key Functions
+
+| Function                   | Purpose                                                 |
+| -------------------------- | ------------------------------------------------------- |
+| `__init__`                 | Declare parameters, create subscribers/publishers       |
+| `statustext_callback`      | Parse `GEOTAG:lat,lon,alt` from STATUSTEXT messages     |
+| `debug_callback`           | Buffer NAMED_VALUE_FLOAT messages (d_lat, d_lon, d_alt) |
+| `_buffer_complete`         | Check if all 3 components received                      |
+| `_process_buffered_geotag` | Validate and dispatch buffered geotag                   |
+| `_validate_coordinates`    | Check lat/lon range and distance from home              |
+| `_haversine_distance`      | Calculate GPS distance between two points               |
+| `_dispatch_target`         | Publish NavSatFix to navigation node                    |
+| `publish_dummy_geotag`     | Testing: send fake geotag                               |
+| `check_buffer_timeout`     | Clear incomplete buffers after timeout                  |
 
 ---
 
 ## Subscribers
 
-| Topic                      | Type       | Purpose              |
-| -------------------------- | ---------- | -------------------- |
-| `/mavros/debug_value/recv` | DebugValue | MAVLink from Drone 1 |
+| Topic                      | Type       | Callback              | Purpose                   |
+| -------------------------- | ---------- | --------------------- | ------------------------- |
+| `/mavros/statustext/recv`  | StatusText | `statustext_callback` | STATUSTEXT mode (default) |
+| `/mavros/debug_value/recv` | DebugValue | `debug_callback`      | NAMED_VALUE_FLOAT mode    |
+
+**QoS**: Uses `BEST_EFFORT` reliability to match MAVROS publisher.
 
 ## Publishers
 
-| Topic                         | Type      | Purpose               |
-| ----------------------------- | --------- | --------------------- |
-| `/drone2/target_position`     | NavSatFix | Target for navigation |
-| `/drone2/new_target_received` | Bool      | Trigger signal        |
-
-## MAVLink Decoding
-
-| MAVLink Name | Field     | Description     |
-| ------------ | --------- | --------------- |
-| `d_lat`      | Latitude  | GPS latitude    |
-| `d_lon`      | Longitude | GPS longitude   |
-| `d_alt`      | Altitude  | Target altitude |
+| Topic                         | Type      | Purpose                   |
+| ----------------------------- | --------- | ------------------------- |
+| `/drone2/target_position`     | NavSatFix | Target GPS for navigation |
+| `/drone2/new_target_received` | Bool      | Trigger signal            |
 
 ---
 
-## Key Parameters
+## Geotag Formats
 
-```yaml
-buffer_timeout_sec: 5.0 # Timeout for incomplete messages
-validate_coordinates: true # Enable GPS validation
-max_distance_from_home_m: 10000.0
-home_latitude: 10.0478
-home_longitude: 76.3303
-use_dummy_geotags: false # Enable for testing without Drone 1
-```
-
----
-
-## Data Flow
+**STATUSTEXT mode** (default):
 
 ```
-Drone 1 Radio ~~~ RF ~~~ Radio → Cube TELEM1
-    → Cube TELEM2 → MAVROS → /mavros/debug_value/recv
-    → telem_rx → /drone2/target_position → Navigation
+GEOTAG:10.0480,76.3305,6.7
 ```
+
+**NAMED_VALUE_FLOAT mode** (3 separate MAVLink messages):
+| MAVLink Name | Field |
+|--------------|-------|
+| `d_lat` | Latitude |
+| `d_lon` | Longitude |
+| `d_alt` | Altitude |
 
 ---
 
 ## Launch Commands
 
 ```bash
-# MAVROS
-ros2 launch mavros apm.launch.py fcu_url:=serial:///dev/ttyAMA0:921600
-
-# Telem RX (normal mode)
+# With config file
 ros2 run telem_rx telem_rx_node --ros-args \
-  --params-file src/telem_rx/config/telem_rx_params.yaml
+  --params-file ~/Documents/ROS-Arkairo/drone2_ws/src/telem_rx/config/telem_rx_params.yaml
 
-# Telem RX (dummy mode - for testing without Drone 1)
+# Dummy mode (testing)
 ros2 run telem_rx telem_rx_node --ros-args \
   -p use_dummy_geotags:=true \
   -p dummy_lat:=10.0481 \
@@ -107,4 +110,14 @@ ros2 run telem_rx telem_rx_node --ros-args \
 
 ---
 
-**Last Updated**: January 5, 2026
+## Manual Testing
+
+```bash
+# Simulate geotag via STATUSTEXT
+ros2 topic pub /mavros/statustext/recv mavros_msgs/msg/StatusText \
+  "{severity: 6, text: 'GEOTAG:10.0480,76.3305,6.7'}" --once
+```
+
+---
+
+**Last Updated**: January 10, 2026

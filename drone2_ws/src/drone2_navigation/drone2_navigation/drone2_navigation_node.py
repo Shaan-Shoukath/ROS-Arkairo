@@ -300,6 +300,11 @@ class Drone2NavigationNode(Node):
             self.rtl_due_to_timeout = False
             # Go directly to NAVIGATE since we're already airborne
             self.transition_to(FlightState.NAVIGATE, 'Resume from RTL - new geotag')
+        elif self.state == FlightState.LANDED:
+            # New geotag after landing - restart full flight sequence
+            self.get_logger().info('New geotag received after landing - restarting flight!')
+            self.log(f'Restarting for new target: ({msg.latitude:.6f}, {msg.longitude:.6f})')
+            self.transition_to(FlightState.SET_GUIDED, 'New target after landing')
     
     def relative_alt_callback(self, msg: Float64):
         """Track relative altitude for takeoff detection (barometer-based)."""

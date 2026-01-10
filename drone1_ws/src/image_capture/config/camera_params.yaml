@@ -1,16 +1,24 @@
 # Image capture configuration
 /**:
   ros__parameters:
-    # Camera device settings
-    camera_device: "/dev/video0"
-    use_usb_camera: true
+    # =========================================================================
+    # CAMERA MODE
+    # =========================================================================
+    # use_sim: true  = USB webcam (laptop/SITL testing)
+    # use_sim: false = Pi Camera 3 (real hardware)
+    use_sim: true # Set to false for Pi Camera 3 on hardware
+
+    # =========================================================================
+    # CAMERA SETTINGS
+    # =========================================================================
+    camera_device: "/dev/video0" # USB camera device (only for use_sim: true)
 
     # Image parameters
-    image_width: 1920
-    image_height: 1080
+    image_width: 1280
+    image_height: 720
     fps: 30.0
 
-    # Camera intrinsics (example values - calibrate for your camera)
+    # Camera intrinsics (Pi Camera 3 approximate values)
     camera_matrix:
       fx: 1000.0
       fy: 1000.0

@@ -38,7 +38,7 @@
     # Time to wait for next geotag after arriving at target
     # If exceeded, drone RTLs (but can resume if new geotag received)
     # SITL testing: 10s | Real deployment: 30-60s recommended
-    wait_timeout_sec: 15.0
+    wait_timeout_sec: 30.0
 
     # Maximum time to wait for takeoff completion
     # If drone doesn't reach 80% of takeoff_altitude within this time, RTL triggered
@@ -64,13 +64,13 @@
     # START LOCATION SETTINGS (Competition Setup)
     # -------------------------------------------------------------------------
     # >>> SET THESE FOR YOUR COMPETITION FIELD <<<
-    
+
     # If true, use GPS lock position as start/home location
     # If false, use the configured start_lat/start_lon below
     use_gps_home: true
-    
+
     # Custom start location (used when use_gps_home: false)
     # Set these coordinates to your competition field takeoff point
-    start_latitude: 10.0478      # Latitude in decimal degrees
-    start_longitude: 76.3303     # Longitude in decimal degrees
-    start_altitude_m: 0.0        # Altitude above sea level (meters)
+    start_latitude: 10.0478 # Latitude in decimal degrees
+    start_longitude: 76.3303 # Longitude in decimal degrees
+    start_altitude_m: 0.0 # Altitude above sea level (meters)

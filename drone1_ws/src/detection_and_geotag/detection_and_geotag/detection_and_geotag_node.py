@@ -129,6 +129,7 @@ class DetectionAndGeotagNode(Node):
         self.declare_parameter('log_to_csv', True)
         self.declare_parameter('csv_log_path', '/tmp/disease_detections.csv')
         self.declare_parameter('target_fps', 10.0)  # Target processing framerate
+        self.declare_parameter('show_gui', False)  # Show OpenCV visualization window (SITL only)
         
         # ═══════════════════════════════════════════════════════════════════
         # GET PARAMETERS
@@ -190,6 +191,7 @@ class DetectionAndGeotagNode(Node):
         self.log_csv = self.get_parameter('log_to_csv').value
         self.csv_path = self.get_parameter('csv_log_path').value
         self.target_fps = self.get_parameter('target_fps').value
+        self.show_gui = self.get_parameter('show_gui').value
         
         # ═══════════════════════════════════════════════════════════════════
         # STATE VARIABLES
@@ -312,6 +314,14 @@ class DetectionAndGeotagNode(Node):
     
     def image_callback(self, msg: Image):
         """Process camera frame for disease detection."""
+        # Always show GUI if enabled (even without GPS or detection)
+        if self.show_gui:
+            try:
+                frame = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+                self._show_gui_visualization(frame, [])
+            except Exception as e:
+                pass
+        
         if self.current_gps is None:
             return
         
@@ -344,6 +354,10 @@ class DetectionAndGeotagNode(Node):
             if self.publish_debug:
                 debug_frame = self._draw_detections(frame, detections)
                 self._publish_debug_image(debug_frame)
+            
+            # Show GUI visualization (SITL mode)
+            if self.show_gui:
+                self._show_gui_visualization(frame, detections)
                 
         except Exception as e:
             self.get_logger().error(f'Detection error: {e}')
@@ -608,6 +622,85 @@ class DetectionAndGeotagNode(Node):
             self.debug_pub.publish(msg)
         except Exception as e:
             self.get_logger().error(f'Debug image error: {e}')
+    
+    def _show_gui_visualization(self, frame: np.ndarray, detections: List[Detection]):
+        """
+        Show OpenCV visualization window (for SITL testing).
+        
+        Displays a 2x2 grid:
+          - Top-left: Original camera feed with detections
+          - Top-right: Yellow mask
+          - Bottom-left: Green mask (plant context)
+          - Bottom-right: Combined result
+        """
+        h, w = frame.shape[:2]
+        
+        # Create masks
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        yellow_mask = cv2.inRange(hsv, self.yellow_min, self.yellow_max)
+        green_mask = cv2.inRange(hsv, self.green_min, self.green_max)
+        
+        # Clean up masks
+        yellow_mask = cv2.morphologyEx(yellow_mask, cv2.MORPH_OPEN, self.kernel_small)
+        yellow_mask = cv2.morphologyEx(yellow_mask, cv2.MORPH_CLOSE, self.kernel_large)
+        green_mask = cv2.morphologyEx(green_mask, cv2.MORPH_OPEN, self.kernel_small)
+        
+        # Create display images
+        display_frame = frame.copy()
+        yellow_display = cv2.cvtColor(yellow_mask, cv2.COLOR_GRAY2BGR)
+        green_display = cv2.cvtColor(green_mask, cv2.COLOR_GRAY2BGR)
+        
+        # Apply color to masks for visualization
+        yellow_display[yellow_mask > 0] = [0, 255, 255]  # Yellow
+        green_display[green_mask > 0] = [0, 255, 0]      # Green
+        
+        # Draw detections on main frame
+        for det in detections:
+            cv2.circle(display_frame, (det.pixel_x, det.pixel_y), 20, (0, 0, 255), 3)
+            cv2.putText(display_frame, det.severity, 
+                       (det.pixel_x + 25, det.pixel_y), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+        
+        # Status overlay
+        status = "ENABLED" if self.detection_enabled else "DISABLED"
+        status_color = (0, 255, 0) if self.detection_enabled else (0, 0, 255)
+        cv2.putText(display_frame, f'Detection: {status}', (10, 30),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
+        cv2.putText(display_frame, f'Detections: {len(detections)}', (10, 60),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(display_frame, f'Total: {self.detection_counter}', (10, 90),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        
+        # Resize for display
+        scale = 0.5
+        display_frame = cv2.resize(display_frame, None, fx=scale, fy=scale)
+        yellow_display = cv2.resize(yellow_display, None, fx=scale, fy=scale)
+        green_display = cv2.resize(green_display, None, fx=scale, fy=scale)
+        
+        # Create combined overlay
+        combined = frame.copy()
+        combined[yellow_mask > 0] = [0, 255, 255]  # Yellow overlay
+        combined = cv2.resize(combined, None, fx=scale, fy=scale)
+        
+        # Stack into 2x2 grid
+        top_row = np.hstack([display_frame, yellow_display])
+        bottom_row = np.hstack([green_display, combined])
+        grid = np.vstack([top_row, bottom_row])
+        
+        # Add labels
+        label_h = int(h * scale)
+        label_w = int(w * scale)
+        cv2.putText(grid, 'Camera + Detections', (10, 20), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(grid, 'Yellow Mask', (label_w + 10, 20), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+        cv2.putText(grid, 'Green Mask (Plants)', (10, label_h + 20), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        cv2.putText(grid, 'Yellow Overlay', (label_w + 10, label_h + 20), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+        
+        cv2.imshow('Disease Detection - SITL', grid)
+        cv2.waitKey(1)
 
 
 def main(args=None):
@@ -622,6 +715,8 @@ def main(args=None):
         pass
     finally:
         node.get_logger().info(f'Total detections: {node.detection_counter}')
+        if node.show_gui:
+            cv2.destroyAllWindows()
         node.destroy_node()
         rclpy.shutdown()
 

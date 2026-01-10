@@ -113,6 +113,13 @@ class TelemRxNode(Node):
             depth=10
         )
         
+        # Sensor QoS for MAVROS topics (BEST_EFFORT)
+        sensor_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            depth=10
+        )
+        
         # Subscribers based on mode
         if not self.use_dummy:
             if self.use_statustext:
@@ -120,7 +127,7 @@ class TelemRxNode(Node):
                     StatusText,
                     '/mavros/statustext/recv',
                     self.statustext_callback,
-                    10
+                    sensor_qos  # Use BEST_EFFORT to match MAVROS
                 )
                 self.get_logger().info('Mode: STATUSTEXT')
             else:

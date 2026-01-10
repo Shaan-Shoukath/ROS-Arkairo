@@ -2,7 +2,7 @@
 /**:
   ros__parameters:
     # Missions folder - drop KML files here
-    missions_folder: "/home/pacman/Drone/ROS-Arkairo/drone1_ws/mission"
+    missions_folder: "~/Documents/ROS-Arkairo/drone1_ws/missions"
 
     # Flight paramete
     altitude_m: 6.7 # Flight altitude in meters AGL (22 feet)

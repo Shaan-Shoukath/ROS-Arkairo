@@ -6,7 +6,7 @@
     # =========================================================================
     # use_sim: true  = USB webcam (laptop/SITL testing)
     # use_sim: false = Pi Camera 3 (real hardware)
-    use_sim: false
+    use_sim: true # Set to false for Pi Camera 3 on hardware
 
     # =========================================================================
     # CAMERA SETTINGS
@@ -14,8 +14,8 @@
     camera_device: "/dev/video0" # USB camera device (only for use_sim: true)
 
     # Image parameters
-    image_width: 1920
-    image_height: 1080
+    image_width: 1280
+    image_height: 720
     fps: 30.0
 
     # Camera intrinsics (Pi Camera 3 approximate values)

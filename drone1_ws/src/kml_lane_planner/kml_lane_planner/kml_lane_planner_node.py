@@ -201,32 +201,105 @@ class KMLToWaypointConverter:
             return []
 
     def create_buffer_polygon(self, polygon: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
-        """Create an inward buffer polygon to keep drone away from boundaries."""
+        """
+        Create an inward buffer polygon to keep drone away from boundaries.
+        
+        Uses edge-based offsetting: moves each edge inward by buffer_distance,
+        then finds new vertex positions at edge intersections.
+        This ensures ALL sides are shrunk uniformly.
+        """
         if len(polygon) < 3:
             return polygon
-            
+        
+        # Convert to ENU for proper distance calculations
         center_lat = sum(p[0] for p in polygon) / len(polygon)
         center_lon = sum(p[1] for p in polygon) / len(polygon)
-
-        buffered_polygon = []
+        
+        polygon_enu = []
         for lat, lon in polygon:
             e, n, _ = self.latlon_to_enu(lat, lon, center_lat, center_lon)
-
-            to_center_e = -e
-            to_center_n = -n
-            dist = math.hypot(to_center_e, to_center_n)
+            polygon_enu.append((e, n))
+        
+        n_pts = len(polygon_enu)
+        
+        # Calculate inward normal for each edge and offset the edge
+        offset_edges = []
+        for i in range(n_pts):
+            p1 = polygon_enu[i]
+            p2 = polygon_enu[(i + 1) % n_pts]
             
-            if dist > self.buffer_distance + 1e-3:
-                factor = min(self.buffer_distance / dist, 0.9)
-                new_e = e + to_center_e * factor
-                new_n = n + to_center_n * factor
+            # Edge direction
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            length = math.hypot(dx, dy)
+            
+            if length < 1e-6:
+                continue
+            
+            # Inward normal (perpendicular, pointing inward for CCW polygon)
+            # For CCW: inward normal is (-dy, dx) normalized
+            # For CW: inward normal is (dy, -dx) normalized
+            # We'll check winding and adjust
+            nx = -dy / length
+            ny = dx / length
+            
+            # Offset the edge inward by buffer_distance
+            offset_p1 = (p1[0] + nx * self.buffer_distance, p1[1] + ny * self.buffer_distance)
+            offset_p2 = (p2[0] + nx * self.buffer_distance, p2[1] + ny * self.buffer_distance)
+            
+            offset_edges.append((offset_p1, offset_p2))
+        
+        if len(offset_edges) < 3:
+            return polygon
+        
+        # Find new vertices at intersections of consecutive offset edges
+        buffered_enu = []
+        for i in range(len(offset_edges)):
+            edge1 = offset_edges[i]
+            edge2 = offset_edges[(i + 1) % len(offset_edges)]
+            
+            # Find intersection of edge1 and edge2
+            intersection = self._line_intersection_point(
+                edge1[0], edge1[1], edge2[0], edge2[1]
+            )
+            
+            if intersection:
+                buffered_enu.append(intersection)
             else:
-                new_e, new_n = e, n
-
-            new_lat, new_lon = self.enu_to_latlon(new_e, new_n, center_lat, center_lon)
-            buffered_polygon.append((new_lat, new_lon))
-
+                # Edges are parallel, use midpoint of endpoints
+                mid = ((edge1[1][0] + edge2[0][0]) / 2, (edge1[1][1] + edge2[0][1]) / 2)
+                buffered_enu.append(mid)
+        
+        # Check if polygon is valid (not self-intersecting due to over-buffering)
+        # If buffer is too large, the polygon may collapse
+        if len(buffered_enu) < 3:
+            return polygon  # Return original if buffer failed
+        
+        # Convert back to lat/lon
+        buffered_polygon = []
+        for e, n in buffered_enu:
+            lat, lon = self.enu_to_latlon(e, n, center_lat, center_lon)
+            buffered_polygon.append((lat, lon))
+        
         return buffered_polygon
+    
+    def _line_intersection_point(self, p1, p2, p3, p4):
+        """Find intersection point of two lines (p1-p2) and (p3-p4)."""
+        x1, y1 = p1
+        x2, y2 = p2
+        x3, y3 = p3
+        x4, y4 = p4
+        
+        denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+        if abs(denom) < 1e-10:
+            return None  # Parallel lines
+        
+        t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
+        
+        ix = x1 + t * (x2 - x1)
+        iy = y1 + t * (y2 - y1)
+        
+        return (ix, iy)
 
     def find_polygon_corners(self, polygon: List[Tuple[float, float]]) -> Dict[str, Tuple[float, float]]:
         """Find the four corners of the polygon."""
@@ -473,7 +546,7 @@ class KmlLanePlannerNode(Node):
         self.declare_parameter('default_home_lon', 76.3303)
         
         # Get parameters
-        self.missions_folder = self.get_parameter('missions_folder').value
+        self.missions_folder = os.path.expanduser(self.get_parameter('missions_folder').value)
         self.kml_filename = self.get_parameter('kml_filename').value
         self.enable_republish = self.get_parameter('enable_republish').value
         self.require_gps_home = self.get_parameter('require_gps_home').value

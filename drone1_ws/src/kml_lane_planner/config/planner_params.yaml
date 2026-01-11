@@ -6,7 +6,7 @@
 
     # Flight paramete
     altitude_m: 6.7 # Flight altitude in meters AGL (22 feet)
-    lane_spacing_m: 15.0 # Distance between parallel lines (meters)
+    lane_spacing_m: 10.0 # Distance between parallel lines (meters)
     buffer_distance_m: 2.0 # Buffer from polygon boundaries (meters)
 
     # File watching
@@ -22,5 +22,5 @@
 
     # Custom start/home location (used when require_gps_home: false)
     # Set these to your competition field coordinates
-    default_home_lat: 10.0478 # 10°02'52"N
-    default_home_lon: 76.3303 # 76°19'49"E
+    default_home_lat: 28.4215 # Just outside SW corner of KML field
+    default_home_lon: 77.5243 # Delhi test area

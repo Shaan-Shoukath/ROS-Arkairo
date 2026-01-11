@@ -71,6 +71,6 @@
 
     # Custom start location (used when use_gps_home: false)
     # Set these coordinates to your competition field takeoff point
-    start_latitude: 10.0478 # Latitude in decimal degrees
-    start_longitude: 76.3303 # Longitude in decimal degrees
+    start_latitude: 28.4215 # Just outside SW corner of KML field
+    start_longitude: 77.5243 # Delhi test area
     start_altitude_m: 0.0 # Altitude above sea level (meters)

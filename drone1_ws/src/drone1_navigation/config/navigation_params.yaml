@@ -36,6 +36,6 @@
     # >>> SET THESE FOR YOUR COMPETITION FIELD <<<
 
     use_gps_home: true
-    start_latitude: 10.0478 # 10°02'52"N
-    start_longitude: 76.3303 # 76°19'49"E
+    start_latitude: 28.4215 # Just outside SW corner of KML field
+    start_longitude: 77.5243 # Delhi test area
     start_altitude_m: 0.0

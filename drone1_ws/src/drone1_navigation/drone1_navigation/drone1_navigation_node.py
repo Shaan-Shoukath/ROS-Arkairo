@@ -979,9 +979,16 @@ class Drone1FlightController(Node):
 
         closest_s = self._closest_s_on_path(x, y)
 
-        # Monotonic progress (prevents noisy backtracking)
+        # Only advance progress if:
+        # 1. The closest point is ahead of current progress (forward movement)
+        # 2. The jump is reasonable (< 50m) to prevent skipping waypoints
+        # This fixes the issue where drone starts far from path and would skip to end
+        max_jump = 50.0  # meters - maximum allowed jump in path progress
         if closest_s > self.path_progress_s:
-            self.path_progress_s = closest_s
+            # Allow progress only if it's a reasonable step forward
+            if (closest_s - self.path_progress_s) < max_jump:
+                self.path_progress_s = closest_s
+            # If jump is too big, don't update - let drone fly to first waypoint first
 
         target_s = min(self.path_progress_s + float(self.path_lookahead_m), self.path_length_m)
         tx, ty = self._point_at_s(target_s)

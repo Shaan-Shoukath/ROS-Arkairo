@@ -27,6 +27,7 @@ Publishers:
 import os
 import glob
 import math
+import sys
 import xml.etree.ElementTree as ET
 import re
 import json
@@ -35,6 +36,7 @@ from typing import List, Tuple, Optional, Dict
 from dataclasses import dataclass
 
 import rclpy
+from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
@@ -827,6 +829,25 @@ class KmlLanePlannerNode(Node):
 
 def main(args=None):
     """Main entry point."""
+    # Auto-load default params file if no params-file argument provided
+    if args is None:
+        args = sys.argv
+    
+    # Check if user already specified a params file
+    has_params_file = any('--params-file' in arg or '-p ' in arg for arg in args)
+    
+    if not has_params_file:
+        # Load default config from package share directory
+        try:
+            pkg_share = get_package_share_directory('kml_lane_planner')
+            default_params = os.path.join(pkg_share, 'config', 'planner_params.yaml')
+            
+            if os.path.exists(default_params):
+                # Insert params-file argument
+                args = list(args) + ['--ros-args', '--params-file', default_params]
+        except Exception:
+            pass  # Package not installed, use hardcoded defaults
+    
     rclpy.init(args=args)
     
     node = KmlLanePlannerNode()

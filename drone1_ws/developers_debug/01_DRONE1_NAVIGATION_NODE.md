@@ -107,6 +107,53 @@ This ensures the detection node only processes images while actively surveying.
 
 ---
 
+## Hardware Setup
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       DRONE 1                               │
+│                                                             │
+│   ┌─────────────────┐                                       │
+│   │  Raspberry Pi 5 │                                       │
+│   │  (Companion)    │                                       │
+│   │                 │                                       │
+│   │  Nodes:         │                                       │
+│   │  • navigation   │                                       │
+│   │  • kml_planner  │                                       │
+│   │  • image_cap    │                                       │
+│   │  • detection    │                                       │
+│   │  • telem_tx     │                                       │
+│   └────────┬────────┘                                       │
+│            │ USB Cable                                      │
+│            ▼                                                │
+│   ┌─────────────────┐                                       │
+│   │  Cube Orange+   │                                       │
+│   │  SYSID = 1      │                                       │
+│   │                 │                                       │
+│   │  SERIAL0 (USB)  │ ← Pi (MAVLink2, 115200)               │
+│   │  SERIAL1/TELEM1 │ → Radio (MAVLink2, 57600)             │
+│   └────────┬────────┘                                       │
+│            ▼                                                │
+│   ┌─────────────────┐                                       │
+│   │ Telemetry Radio │ ~~~ RF (Net ID: 25) ~~~ GCS/Drone2    │
+│   └─────────────────┘                                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### ArduPilot Parameters
+
+```
+SYSID_THISMAV = 1        # Drone 1 system ID
+SERIAL0_PROTOCOL = 2     # USB = MAVLink2
+SERIAL0_BAUD = 115       # 115200
+SERIAL0_OPTIONS = 0      # Forwarding enabled
+SERIAL1_PROTOCOL = 2     # TELEM1 = MAVLink2
+SERIAL1_BAUD = 57        # 57600
+SERIAL1_OPTIONS = 0      # Forwarding enabled
+```
+
+---
+
 ## State Machine
 
 ```
@@ -139,13 +186,53 @@ IDLE → WAIT_FCU → SET_GUIDED → ARM → TAKEOFF → WAIT_TAKEOFF → NAVIGA
 
 ---
 
-## Launch Command
+## Manual Testing
+
+### Start MAVROS (Hardware - USB)
 
 ```bash
+ros2 launch mavros apm.launch fcu_url:=serial:///dev/ttyACM0:115200
+```
+
+### Start MAVROS (SITL)
+
+```bash
+ros2 launch mavros apm.launch fcu_url:=udp://:14551@127.0.0.1:14550
+```
+
+### Run Navigation Node
+
+```bash
+cd ~/Documents/ROS-Arkairo/drone1_ws && source install/setup.zsh
 ros2 run drone1_navigation drone1_navigation_node --ros-args \
   --params-file ~/Documents/ROS-Arkairo/drone1_ws/src/drone1_navigation/config/navigation_params.yaml
 ```
 
+### Monitor Status
+
+```bash
+ros2 topic echo /drone1/navigation_status
+```
+
 ---
 
-**Last Updated**: January 10, 2026
+## Config File
+
+```yaml
+# navigation_params.yaml
+/**:
+  ros__parameters:
+    mission_altitude: 6.7 # 22 feet
+    setpoint_rate_hz: 10.0
+    waypoint_radius_m: 3.0
+    fcu_timeout_sec: 30.0
+    arming_timeout_sec: 60.0
+    takeoff_timeout_sec: 90.0
+    use_gps_home: true
+    start_latitude: 28.4215
+    start_longitude: 77.5243
+```
+
+---
+
+**Last Updated**: January 13, 2026

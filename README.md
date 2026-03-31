@@ -15,46 +15,92 @@ A production-grade ROS 2 dual-drone system for **fully autonomous** field survey
 ## 🏗️ Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    FULLY AUTONOMOUS OPERATION                           │
-│                    (Direct Telemetry - GCS-Free)                        │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  Drone-1 (Survey)                          Drone-2 (Sprayer)            │
-│  ┌───────────────┐                    ┌─────────────────────┐           │
-│  │ KML→Auto-Arm  │                    │ IDLE until geotag  │            │
-│  │ Takeoff       │                    │ Unified Navigation │            │
-│  │ Survey        │═══TELEMETRY═══════►│ (ARM→NAV→SPRAY)    │            │
-│  │ Detect→Geotag │    (MAVLink)       │ Merged Detection+  │            │
-│  │ RTL           │                    │ Centering          │            │
-│  └───────────────┘                    └─────────────────────┘           │
-│                                                                         │
-│  ═══════════════ DIRECT SiK RADIO LINK (No GCS) ═══════════════════     │
-│                                                                         │
-│  🛡️ TF-Luna Object Avoidance: Handled by ArduPilot (Cube Orange+)       │
-│  ⚡ Optimized Architecture: Merged nodes reduce latency                 │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                     FULLY AUTONOMOUS OPERATION                               │
+│           Drone-1 (Survey) ──► GCS Forwarder ──► Drone-2 (Sprayer)           │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Drone-1 (Survey)           GCS Laptop          Drone-2 (Sprayer)            │
+│  ┌───────────────┐    ┌──────────────────┐    ┌─────────────────────┐        │
+│  │ KML→Auto-Arm  │    │  GCS Forwarder   │    │ IDLE until geotag   │        │
+│  │ Takeoff       │    │  (pymavlink)     │    │ Unified Navigation  │        │
+│  │ Survey        │═══►│  Filters GEOTAG  │═══►│ (ARM→NAV→SPRAY)     │        │
+│  │ Detect→Geotag │ A  │  from SYSID=1    │ B  │ Merged Detection+   │        │
+│  │ RTL           │    │  Dedup + Forward  │    │ Centering           │        │
+│  └───────────────┘    └──────────────────┘    └─────────────────────┘        │
+│       Radio A                                      Radio B                   │
+│  (SiK 915MHz Air)         GCS Ground              (SiK 915MHz Air)           │
+│  ┌───────────┐        ┌──────────────┐         ┌───────────┐                 │
+│  │ Cube      │~~~~~~~~│ /dev/ttyUSB0 │         │ Cube      │                 │
+│  │ Orange+   │  RF    │ /dev/ttyUSB1 │~~~~RF~~~│ Orange+   │                 │
+│  │ TEL1 Port │        │ (2× USB SiK) │         │ TEL1 Port │                 │
+│  └───────────┘        └──────────────┘         └───────────┘                 │
+│                                                                              │
+│  🛡️ TF-Luna Object Avoidance: Handled by ArduPilot (Cube Orange+)            │
+│  ⚡ Optimized Architecture: Merged nodes reduce latency                      │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Direct Telemetry Data Flow (Updated Jan 2026)
+### Geotag Data Flow: Drone 1 → GCS → Drone 2 (Step-by-Step)
+
+The system transmits geotagged disease locations from the survey drone to the sprayer drone using MAVLink STATUSTEXT messages relayed through a ground-based forwarder.
 
 ```
-Drone-1                                              Drone-2
-┌─────────────────────┐                    ┌─────────────────────┐
-│ detection_and_      │                    │ telem_rx_node       │
-│ geotag_node         │                    │   ↓                 │
-│ (uses current GPS)  │                    │ Validates coords    │
-│   ↓                 │                    │   ↓                 │
-│ /drone1/disease_    │    MAVLink         │ /drone2/target_     │
-│ geotag              │    DEBUG_VALUE     │ position            │
-│   ↓                 │    (NAMED_VALUE_   │   ↓                 │
-│ telem_tx_node       │═══════════════════►│ Navigation          │
-│   ↓                 │    FLOAT type)     │   ↓                 │
-│ MAVROS              │    (d_lat,d_lon,   │ Detection/Centering │
-│                     │     d_alt)         │   ↓                 │
-│                     │                    │ Sprayer (FC Relay)  │
-└─────────────────────┘                    └─────────────────────┘
+STEP 1: DETECTION (Drone 1 — Pi 5)
+├── Camera frame → HSV color thresholding (yellow H:15-40)
+├── Green vegetation context validation + sand exclusion
+├── Contour filtering (area >250px, shape checks)
+├── GPS: uses drone's current GPS position (simplified — no ray-casting)
+├── Dedup: haversine <3m from any prior detection → skip
+└── Publishes GeoPointStamped → /drone1/disease_geotag
+
+STEP 2: MAVLINK ENCODING (Drone 1 — telem_tx_node)
+├── Subscribes /drone1/disease_geotag
+├── Formats: "GEOTAG:10.048352,76.330968,0.0" (50 char MAVLink limit)
+├── Creates StatusText(severity=6, text=geotag_string)
+├── Publishes → /mavros/statustext/send
+└── MAVROS encodes as MAVLink STATUSTEXT (#253) → serial → Cube Orange+
+
+STEP 3: RADIO TRANSMISSION (Air → Ground)
+├── ArduPilot forwards STATUSTEXT over SiK telemetry radio
+├── 915MHz / 433MHz radio link (57600 baud, ~5.6 KB/s)
+└── Ground radio receives on /dev/ttyUSB0
+
+STEP 4: GCS FORWARDING (Ground Laptop — pymavlink)
+├── pymavlink recv_match() on /dev/ttyUSB0 (Drone 1 radio)
+├── Filter: msg.get_type() == 'STATUSTEXT'
+├── Filter: msg._header.srcSystem == 1 (Drone 1 SYSID)
+├── Filter: msg.text.startswith("GEOTAG:")
+├── Dedup: exact string match against last message
+├── Forward: drone2_conn.mav.statustext_send(severity, text)
+└── Sent via /dev/ttyUSB1 (Drone 2 ground radio)
+
+STEP 5: RADIO TRANSMISSION (Ground → Air)
+├── Ground radio (Radio B) transmits to Drone 2 air radio
+├── Cube Orange+ receives → MAVROS publishes /mavros/statustext/recv
+└── ROS2 message available on Drone 2's Pi 5
+
+STEP 6: GEOTAG DECODING (Drone 2 — telem_rx_node)
+├── Subscribes /mavros/statustext/recv
+├── Filter: text.startswith("GEOTAG:")
+├── Dedup: text != last_geotag (exact string)
+├── Parse: split(",") → lat, lon, alt
+├── Validate: lat ∈ [-90,90], lon ∈ [-180,180], not (0,0)
+├── Validate: haversine from home < 10km
+├── Optional: override altitude with configured target_altitude_m
+└── Publishes NavSatFix → /drone2/target_position
+
+STEP 7: AUTONOMOUS RESPONSE (Drone 2 — navigation + centering + spray)
+├── Navigation: GPS→ENU conversion, ARM→TAKEOFF→NAVIGATE to target
+├── Arrival: XY distance < 3m → publishes /drone2/arrival_status
+├── Centering: HSV re-detection + PID visual servoing (20Hz)
+├── Descent: 6.7m → 2m spray altitude at 0.3 m/s
+├── Spray: GPIO relay / FC relay (2.5s prime + 5s spray)
+├── Ascend: 2m → 6.7m at 0.5 m/s
+└── Wait 10s for next geotag → RTL if timeout
 ```
+
+> **Dual encoding support**: The system supports both `STATUSTEXT` (primary, single message) and `NAMED_VALUE_FLOAT` (fallback, 3 messages: d_lat, d_lon, d_alt). STATUSTEXT is preferred for reliability.
 
 ---
 
@@ -315,34 +361,51 @@ cp field_boundary.kml ~/Documents/ROSArkairo/drone1_ws/missions/
 
 ## 📡 Topic Reference
 
-### Drone-1 → Drone-2 (Direct Telemetry)
+### Drone-1 → GCS → Drone-2 (Telemetry Relay)
 
-| Topic                      | Direction | Type            | Description           |
-| -------------------------- | --------- | --------------- | --------------------- |
-| `/drone1/disease_geotag`   | D1 Local  | GeoPointStamped | Detected disease      |
-| `/mavros/debug_value/send` | D1→Telem  | DebugValue      | MAVLink transport     |
-| `/mavros/debug_value/recv` | Telem→D2  | DebugValue      | Received from Drone-1 |
-| `/drone2/target_position`  | D2 Local  | NavSatFix       | Navigation target     |
+| Stage | Topic / Channel | Type | Description |
+| ----- | -------------- | ---- | ----------- |
+| D1 Detection | `/drone1/disease_geotag` | GeoPointStamped | Detected disease GPS |
+| D1 Encoding (primary) | `/mavros/statustext/send` | StatusText | `GEOTAG:lat,lon,alt` format |
+| D1 Encoding (fallback) | `/mavros/debug_value/send` | DebugValue | d_lat, d_lon, d_alt |
+| Radio A | SiK 915MHz Air→Ground | MAVLink | STATUSTEXT #253 |
+| GCS Forward | pymavlink `/dev/ttyUSB0` → `/dev/ttyUSB1` | MAVLink | Filter + dedup + relay |
+| Radio B | SiK 915MHz Ground→Air | MAVLink | STATUSTEXT #253 |
+| D2 Decoding (primary) | `/mavros/statustext/recv` | StatusText | Parse GEOTAG string |
+| D2 Decoding (fallback) | `/mavros/debug_value/recv` | DebugValue | Buffer d_lat/d_lon/d_alt |
+| D2 Target | `/drone2/target_position` | NavSatFix | Navigation target |
 
 ### Drone-2 Internal
 
-| Topic                         | Type      | Description       |
-| ----------------------------- | --------- | ----------------- |
-| `/drone2/target_position`     | NavSatFix | Navigation target |
-| `/drone2/new_target_received` | Bool      | Mission trigger   |
-| `/drone2/status`              | String    | Current state     |
+| Topic | Type | Publisher | Subscriber |
+| ----- | ---- | --------- | ---------- |
+| `/drone2/target_position` | NavSatFix | telem_rx | drone2_navigation |
+| `/drone2/arrival_status` | Bool | drone2_navigation | detection_centering |
+| `/drone2/spray_ready` | Bool | detection_centering | sprayer_control |
+| `/drone2/spray_done` | Bool | sprayer_control | drone2_navigation |
+| `/drone2/navigation_status` | String | drone2_navigation | monitoring |
+| `/drone2/detection_status` | Bool | detection_centering | monitoring |
+
+### GCS Component
+
+| Component | Technology | Ports | Purpose |
+| --------- | ---------- | ----- | ------- |
+| GCS Forwarder | pymavlink (Python) | `/dev/ttyUSB0` (D1), `/dev/ttyUSB1` (D2) | Relay GEOTAG STATUSTEXT from Drone 1 to Drone 2 |
 
 ---
 
 ## 🔧 Key Algorithms
 
-| Algorithm              | Location             | Description                                |
-| ---------------------- | -------------------- | ------------------------------------------ |
-| **ENU↔GPS Conversion** | Lane Planner         | WGS84 to local metric coordinates          |
-| **Ray-Casting GPS**    | Detection Node       | Pixel to GPS using camera intrinsics + IMU |
-| **PID Control**        | Centering Controller | Visual servoing for target alignment       |
-| **Haversine Distance** | All navigation       | GPS distance calculation                   |
-| **MAVLink Encoding**   | Telemetry TX/RX      | GPS to DEBUG_VALUE (NAMED_VALUE_FLOAT)     |
+| Algorithm | Location | Description |
+| --------- | -------- | ----------- |
+| **Pure-Pursuit Path Following** | Drone-1 Navigation | Lookahead-based polyline tracking for smooth survey patterns |
+| **ENU↔GPS Conversion** | Lane Planner (WGS84), Nav Nodes (flat-earth) | Coordinate frame conversions |
+| **HSV Disease Detection** | Detection Nodes (both drones) | Yellow thresholding + green context validation |
+| **PID Visual Servoing** | Drone-2 Centering | Image-space error → velocity commands for alignment |
+| **Boustrophedon Survey** | KML Lane Planner | Serpentine parallel-line survey pattern generation |
+| **MAVLink STATUSTEXT** | Telemetry TX/RX + GCS | `GEOTAG:lat,lon,alt` encoding (50 char limit) |
+| **Haversine Distance** | All navigation + dedup | GPS distance for arrival detection + geotag dedup |
+| **GPS Dedup Filtering** | Detection Node | 3m radius exclusion using logged detection list |
 
 ---
 

@@ -26,7 +26,7 @@ A production-grade ROS 2 dual-drone system for **fully autonomous** field survey
 │  │ Takeoff       │    │  (pymavlink)     │    │ Unified Navigation  │        │
 │  │ Survey        │═══►│  Filters GEOTAG  │═══►│ (ARM→NAV→SPRAY)     │        │
 │  │ Detect→Geotag │ A  │  from SYSID=1    │ B  │ Merged Detection+   │        │
-│  │ RTL           │    │  Dedup + Forward  │    │ Centering           │        │
+│  │ RTL           │    │  Dedup + Forward │    │ Centering           │        │
 │  └───────────────┘    └──────────────────┘    └─────────────────────┘        │
 │       Radio A                                      Radio B                   │
 │  (SiK 915MHz Air)         GCS Ground              (SiK 915MHz Air)           │
